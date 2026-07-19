@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Generate pilot defects presentation from RTR CSV data using the PDF template."""
+"""Generate pilot defects presentation from RTR CSV data.
+
+Style and layout: ai/rules/cherkizovo-presentations.md
+Theme constants: ai/rules/cherkizovo_theme.py
+"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import math
-import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,60 +21,86 @@ from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
-ROWS_PER_SLIDE = 7
+RULES_DIR = Path(__file__).resolve().parent / "ai" / "rules"
+sys.path.insert(0, str(RULES_DIR.parent.parent))
+
+from ai.rules.cherkizovo_theme import (  # noqa: E402
+    CHARS_PER_INCH,
+    COLORS,
+    COLUMN_WIDTHS_IN,
+    CSV_EXCLUDE_TEXT,
+    CSV_INCLUDE_TEXT,
+    HEADER_ROW_HEIGHT_IN,
+    LINE_HEIGHT_IN,
+    LOGO_LEFT_IN,
+    LOGO_TOP_IN,
+    LOGO_WIDTH_IN,
+    MAX_DATA_HEIGHT_IN,
+    MIN_DATA_ROW_HEIGHT_IN,
+    PAGE_FONT,
+    PAGE_NUMBER_SIZE,
+    SLIDE_HEIGHT_IN,
+    SLIDE_TITLE_TEMPLATE,
+    SLIDE_WIDTH_IN,
+    STATUS_COL_WIDTH_IN,
+    TABLE_BODY_SIZE,
+    TABLE_COLUMNS,
+    TABLE_FONT,
+    TABLE_HEADER_SIZE,
+    TABLE_LEFT_IN,
+    TABLE_TOP_IN,
+    TABLE_WIDTH_IN,
+    TASK_COL_WIDTH_IN,
+    TITLE_FONT,
+    TITLE_LEFT_IN,
+    TITLE_SIZE,
+    TITLE_TOP_IN,
+    VALUE_COL_WIDTH_IN,
+)
+
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
 
 
+def rgb(name: str) -> RGBColor:
+    red, green, blue = COLORS[name]
+    return RGBColor(red, green, blue)
+
+
 @dataclass(frozen=True)
-class PdfTheme:
-    """Colors and fonts extracted from the updated PDF template."""
+class CherkizovoTheme:
+    """Runtime theme mapped from cherkizovo-presentations.md."""
 
-    title_font = "Verdana"
-    body_font = "Calibri"
+    title_font = TITLE_FONT
+    table_font = TABLE_FONT
+    page_font = PAGE_FONT
 
-    title_rgb = RGBColor(0x83, 0x12, 0x23)
-    text_rgb = RGBColor(0x00, 0x00, 0x00)
-    key_rgb = RGBColor(0x77, 0x77, 0x7A)
-    accent_rgb = RGBColor(0xFF, 0x00, 0x00)
-    header_bg_rgb = RGBColor(0xAF, 0x18, 0x2E)
-    header_fg_rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    alt_row_rgb = RGBColor(0xF8, 0xE7, 0xE8)
-    white_rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    title_rgb = rgb("title")
+    text_rgb = rgb("black")
+    key_rgb = rgb("key")
+    accent_rgb = rgb("critical")
+    header_bg_rgb = rgb("dark_red")
+    header_fg_rgb = rgb("white")
+    alt_row_rgb = rgb("alt_row")
+    white_rgb = rgb("white")
+    page_number_rgb = rgb("page_number")
 
-    title_size = 18
-    header_size = 12
-    body_size = 11
+    title_size = TITLE_SIZE
+    header_size = TABLE_HEADER_SIZE
+    body_size = TABLE_BODY_SIZE
+    page_number_size = PAGE_NUMBER_SIZE
 
 
-THEME = PdfTheme()
-
-# Layout extracted from the PDF template (960x540 pt slide).
-SLIDE_WIDTH_IN = 13.333
-SLIDE_HEIGHT_IN = 7.5
-TABLE_LEFT_IN = 0.583
-TABLE_TOP_IN = 1.127
-TABLE_WIDTH_IN = 12.483
-HEADER_ROW_HEIGHT_IN = 0.808
-SIDE_MARGIN_IN = SLIDE_WIDTH_IN - TABLE_LEFT_IN - TABLE_WIDTH_IN
-MIN_BOTTOM_MARGIN_IN = SIDE_MARGIN_IN
-MAX_TABLE_HEIGHT_IN = SLIDE_HEIGHT_IN - TABLE_TOP_IN - MIN_BOTTOM_MARGIN_IN
-MAX_DATA_HEIGHT_IN = MAX_TABLE_HEIGHT_IN - HEADER_ROW_HEIGHT_IN
-MIN_DATA_ROW_HEIGHT_IN = 0.742
-LINE_HEIGHT_IN = THEME.body_size / 72 * 1.15
-TASK_COL_WIDTH_IN = 4.051
-VALUE_COL_WIDTH_IN = 3.785
-STATUS_COL_WIDTH_IN = 1.872
-CHARS_PER_INCH = 11
+THEME = CherkizovoTheme()
 
 SLIDE_WIDTH = Inches(SLIDE_WIDTH_IN)
 SLIDE_HEIGHT = Inches(SLIDE_HEIGHT_IN)
-TITLE_LEFT = Inches(0.614)
-TITLE_TOP = Inches(0.361)
+TITLE_LEFT = Inches(TITLE_LEFT_IN)
+TITLE_TOP = Inches(TITLE_TOP_IN)
 TITLE_WIDTH = Inches(8.5)
-LOGO_LEFT = Inches(10.255)
-LOGO_TOP = Inches(0.112)
-LOGO_WIDTH = Inches(2.65)
+LOGO_LEFT = Inches(LOGO_LEFT_IN)
+LOGO_TOP = Inches(LOGO_TOP_IN)
+LOGO_WIDTH = Inches(LOGO_WIDTH_IN)
 TABLE_LEFT = Inches(TABLE_LEFT_IN)
 TABLE_TOP = Inches(TABLE_TOP_IN)
 TABLE_WIDTH = Inches(TABLE_WIDTH_IN)
@@ -78,22 +108,8 @@ HEADER_ROW_HEIGHT = Inches(HEADER_ROW_HEIGHT_IN)
 CELL_MARGIN_LR = Pt(3)
 CELL_MARGIN_TB = Pt(2)
 
-COLUMNS = [
-    "№пп",
-    "Ключ",
-    "Задача",
-    "Ценность",
-    "Предварительная\nоценка\nреализации,\nтыс.руб.",
-    "Статус",
-]
-COLUMN_WIDTHS = [
-    Inches(0.526),
-    Inches(0.944),
-    Inches(4.051),
-    Inches(3.785),
-    Inches(1.306),
-    Inches(1.872),
-]
+COLUMNS = TABLE_COLUMNS
+COLUMN_WIDTHS = [Inches(width) for width in COLUMN_WIDTHS_IN]
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:
@@ -116,7 +132,7 @@ def load_csv(path: Path) -> list[dict[str, str]]:
             continue
 
         row_text = " | ".join(row).lower()
-        if "осипова" not in row_text or "важно" in row_text:
+        if CSV_INCLUDE_TEXT not in row_text or CSV_EXCLUDE_TEXT in row_text:
             continue
 
         records.append(
@@ -359,7 +375,7 @@ def set_cell_runs(
         run.text = text
         set_run_font(
             run,
-            font_name=THEME.body_font,
+            font_name=THEME.table_font,
             size=size,
             bold=bold,
             color=color or THEME.text_rgb,
@@ -373,7 +389,7 @@ def set_cell(
     cell,
     text: str,
     *,
-    font_name: str = THEME.body_font,
+    font_name: str = THEME.table_font,
     bold: bool = False,
     size: int = THEME.body_size,
     align=PP_ALIGN.LEFT,
@@ -401,7 +417,7 @@ def add_slide_title(slide, page_index: int, total_pages: int) -> None:
     title_box = slide.shapes.add_textbox(TITLE_LEFT, TITLE_TOP, TITLE_WIDTH, Inches(0.45))
     set_textbox(
         title_box.text_frame,
-        f"Дефекты и разработки по Пилоту ({page_index}/{total_pages})",
+        SLIDE_TITLE_TEMPLATE.format(page=page_index, total=total_pages),
         font_name=THEME.title_font,
         size=THEME.title_size,
         bold=True,
@@ -446,7 +462,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             set_cell(
                 table.cell(0, column_index),
                 title,
-                font_name=THEME.body_font,
+                font_name=THEME.table_font,
                 bold=True,
                 size=THEME.header_size,
                 align=PP_ALIGN.CENTER,
