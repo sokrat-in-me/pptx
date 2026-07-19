@@ -38,7 +38,7 @@ from themes.cherkizovo import (  # noqa: E402
     TITLE_LEFT_IN,
     TITLE_SIZE,
     TITLE_TOP_IN,
-    apply_michurin_theme,
+    apply_cherkizovo_theme,
 )
 
 ASSETS_DIR = ROOT_DIR / "assets"
@@ -542,7 +542,7 @@ def build_presentation(
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_WIDTH_IN)
     prs.slide_height = Inches(SLIDE_HEIGHT_IN)
-    apply_michurin_theme(prs)
+    apply_cherkizovo_theme(prs)
 
     for page_index, group in enumerate(groups, start=1):
         build_gantt_slide(

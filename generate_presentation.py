@@ -57,7 +57,7 @@ from themes.cherkizovo import (  # noqa: E402
     TITLE_TOP_IN,
     TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
-    apply_michurin_theme,
+    apply_cherkizovo_theme,
 )
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -471,7 +471,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
-    apply_michurin_theme(prs)
+    apply_cherkizovo_theme(prs)
     blank = prs.slide_layouts[6]
 
     for page_index, (chunk, row_heights) in enumerate(slides, start=1):

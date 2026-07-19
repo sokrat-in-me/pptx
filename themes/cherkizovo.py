@@ -132,7 +132,7 @@ def _set_scheme_color(parent: etree._Element, hex_value: str) -> None:
     srgb.set("val", hex_value)
 
 
-def apply_michurin_theme(prs: Presentation) -> None:
+def apply_cherkizovo_theme(prs: Presentation) -> None:
     """Apply MICHURIN color scheme, fonts, and hyperlink colors to a presentation."""
     theme_part = prs.slide_master.part.part_related_by(RT.THEME)
     theme = etree.fromstring(theme_part.blob)
