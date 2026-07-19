@@ -10,7 +10,7 @@
 
 ```bash
 pip install -r requirements.txt
-python generate_presentation.py
+python generate_tickets_and_releases_presentation.py
 ```
 
 ### График запуска RTR

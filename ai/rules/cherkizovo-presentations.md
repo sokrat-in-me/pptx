@@ -159,7 +159,7 @@
 |------|------------|
 | `themes/cherkizovo.py` | Константы темы, макет и применение МИЧУРИН к презентации |
 | `ai/rules/git-workflow.md` | Правила коммита и push после каждого изменения |
-| `generate_presentation.py` | Генератор презентации |
+| `generate_tickets_and_releases_presentation.py` | Генератор презентации |
 | `assets/logo_0.png` | Логотип Черкизово (белый фон) |
 | `data/RTR-status.csv` | Исходные данные |
 | `Дефекты_и_разработки_по_Пилоту.pptx` | Результат генерации |
