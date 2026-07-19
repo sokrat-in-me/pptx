@@ -44,6 +44,24 @@ class PdfTheme:
 
 
 THEME = PdfTheme()
+
+# Layout extracted from the PDF template (960x540 pt slide).
+SLIDE_WIDTH = Inches(13.333)
+SLIDE_HEIGHT = Inches(7.5)
+TITLE_LEFT = Inches(0.614)
+TITLE_TOP = Inches(0.361)
+TITLE_WIDTH = Inches(8.5)
+LOGO_LEFT = Inches(10.255)
+LOGO_TOP = Inches(0.112)
+LOGO_WIDTH = Inches(2.65)
+TABLE_LEFT = Inches(0.583)
+TABLE_TOP = Inches(1.127)
+TABLE_WIDTH = Inches(12.483)
+HEADER_ROW_HEIGHT = Inches(0.808)
+DATA_ROW_HEIGHT = Inches(0.742)
+CELL_MARGIN_LR = Pt(3)
+CELL_MARGIN_TB = Pt(2)
+
 COLUMNS = [
     "№пп",
     "Ключ",
@@ -53,12 +71,12 @@ COLUMNS = [
     "Статус",
 ]
 COLUMN_WIDTHS = [
-    Inches(0.45),
-    Inches(0.85),
-    Inches(3.75),
-    Inches(3.55),
-    Inches(1.2),
-    Inches(1.65),
+    Inches(0.526),
+    Inches(0.944),
+    Inches(4.051),
+    Inches(3.785),
+    Inches(1.306),
+    Inches(1.872),
 ]
 
 
@@ -254,12 +272,16 @@ def set_cell_runs(
 ) -> None:
     cell.text = ""
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-    cell.margin_left = Pt(4)
-    cell.margin_right = Pt(4)
-    cell.margin_top = Pt(2)
-    cell.margin_bottom = Pt(2)
+    cell.margin_left = CELL_MARGIN_LR
+    cell.margin_right = CELL_MARGIN_LR
+    cell.margin_top = CELL_MARGIN_TB
+    cell.margin_bottom = CELL_MARGIN_TB
+    cell.text_frame.word_wrap = True
     paragraph = cell.text_frame.paragraphs[0]
     paragraph.alignment = align
+    paragraph.space_before = Pt(0)
+    paragraph.space_after = Pt(0)
+    paragraph.line_spacing = 1.0
     for text, bold, color in runs:
         if not text:
             continue
@@ -302,11 +324,11 @@ def set_cell(
 def add_logo(slide) -> None:
     if not LOGO_PATH.exists():
         return
-    slide.shapes.add_picture(str(LOGO_PATH), Inches(10.55), Inches(0.08), width=Inches(2.35))
+    slide.shapes.add_picture(str(LOGO_PATH), LOGO_LEFT, LOGO_TOP, width=LOGO_WIDTH)
 
 
 def add_slide_title(slide, page_index: int, total_pages: int) -> None:
-    title_box = slide.shapes.add_textbox(Inches(0.35), Inches(0.12), Inches(9.5), Inches(0.55))
+    title_box = slide.shapes.add_textbox(TITLE_LEFT, TITLE_TOP, TITLE_WIDTH, Inches(0.45))
     set_textbox(
         title_box.text_frame,
         f"Дефекты и разработки по Пилоту ({page_index}/{total_pages})",
@@ -321,9 +343,10 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     total_pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
 
     prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = SLIDE_WIDTH
+    prs.slide_height = SLIDE_HEIGHT
     blank = prs.slide_layouts[6]
+    table_height = HEADER_ROW_HEIGHT + DATA_ROW_HEIGHT * ROWS_PER_SLIDE
 
     for page_index, chunk_start in enumerate(range(0, len(records), ROWS_PER_SLIDE), start=1):
         chunk = records[chunk_start : chunk_start + ROWS_PER_SLIDE]
@@ -334,14 +357,18 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
         table_shape = slide.shapes.add_table(
             len(chunk) + 1,
             len(COLUMNS),
-            Inches(0.35),
-            Inches(0.75),
-            sum(COLUMN_WIDTHS),
-            Inches(6.35),
+            TABLE_LEFT,
+            TABLE_TOP,
+            TABLE_WIDTH,
+            table_height,
         )
         table = table_shape.table
         for index, width in enumerate(COLUMN_WIDTHS):
             table.columns[index].width = width
+
+        table.rows[0].height = HEADER_ROW_HEIGHT
+        for row_index in range(1, len(chunk) + 1):
+            table.rows[row_index].height = DATA_ROW_HEIGHT
 
         for column_index, title in enumerate(COLUMNS):
             set_cell(
@@ -388,7 +415,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
                 table.cell(row_index, 4),
                 cost_text(record),
                 bold=critical and bool(cost_text(record)),
-                align=PP_ALIGN.CENTER,
+                align=PP_ALIGN.RIGHT,
                 fill=fill,
                 font_color=accent if critical and cost_text(record) else THEME.text_rgb,
             )
