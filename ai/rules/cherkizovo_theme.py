@@ -76,6 +76,9 @@ TABLE_COLUMNS = [
 
 SLIDE_TITLE_TEMPLATE = "Дефекты и разработки по Пилоту ({page}/{total})"
 
+# Yandex Tracker links for task keys
+TRACKER_BASE_URL = "https://tracker.yandex.ru/"
+
 # CSV filters (section 7)
 CSV_INCLUDE_TEXT = "осипова"
 CSV_EXCLUDE_TEXT = "важно"

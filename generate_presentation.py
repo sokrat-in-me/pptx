@@ -16,7 +16,7 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_UNDERLINE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
@@ -55,6 +55,7 @@ from ai.rules.cherkizovo_theme import (  # noqa: E402
     TITLE_LEFT_IN,
     TITLE_SIZE,
     TITLE_TOP_IN,
+    TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
 )
 
@@ -309,6 +310,10 @@ def style_table_borders(table) -> None:
             set_cell_border(cell)
 
 
+def tracker_url(task_key: str) -> str:
+    return f"{TRACKER_BASE_URL}{task_key}"
+
+
 def set_run_font(
     run,
     *,
@@ -383,6 +388,38 @@ def set_cell_runs(
     if fill is not None:
         cell.fill.solid()
         cell.fill.fore_color.rgb = fill
+
+
+def set_key_cell(cell, task_key: str, *, fill: RGBColor) -> None:
+    """Set the task-key cell with an optional Yandex Tracker hyperlink."""
+    cell.text = ""
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cell.margin_left = CELL_MARGIN_LR
+    cell.margin_right = CELL_MARGIN_LR
+    cell.margin_top = CELL_MARGIN_TB
+    cell.margin_bottom = CELL_MARGIN_TB
+    cell.text_frame.word_wrap = True
+    paragraph = cell.text_frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.LEFT
+    paragraph.space_before = Pt(0)
+    paragraph.space_after = Pt(0)
+    paragraph.line_spacing = 1.0
+
+    run = paragraph.add_run()
+    run.text = task_key
+    set_run_font(
+        run,
+        font_name=THEME.table_font,
+        size=THEME.body_size,
+        color=THEME.key_rgb,
+    )
+    if task_key != "—":
+        run.hyperlink.address = tracker_url(task_key)
+        run.font.underline = MSO_UNDERLINE.SINGLE_LINE
+        run.font.color.rgb = THEME.key_rgb
+
+    cell.fill.solid()
+    cell.fill.fore_color.rgb = fill
 
 
 def set_cell(
@@ -483,13 +520,8 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
                 align=PP_ALIGN.CENTER,
                 fill=fill,
             )
-            set_cell(
-                table.cell(row_index, 1),
-                record["task_key"] or "—",
-                size=THEME.body_size,
-                fill=fill,
-                font_color=THEME.key_rgb,
-            )
+            task_key = record["task_key"] or "—"
+            set_key_cell(table.cell(row_index, 1), task_key, fill=fill)
 
             task_runs = [(text, bold, THEME.text_rgb) for text, bold in task_parts(record)]
             set_cell_runs(table.cell(row_index, 2), task_runs, fill=fill)
