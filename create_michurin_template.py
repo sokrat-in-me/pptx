@@ -27,7 +27,7 @@ from themes.cherkizovo import (  # noqa: E402
     TITLE_FONT,
     TITLE_SIZE,
 )
-from themes.michurin_theme import apply_michurin_theme  # noqa: E402
+from themes.michurin import apply_michurin_theme  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
