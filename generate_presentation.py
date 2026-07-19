@@ -46,19 +46,29 @@ class PdfTheme:
 THEME = PdfTheme()
 
 # Layout extracted from the PDF template (960x540 pt slide).
-SLIDE_WIDTH = Inches(13.333)
-SLIDE_HEIGHT = Inches(7.5)
+SLIDE_WIDTH_IN = 13.333
+SLIDE_HEIGHT_IN = 7.5
+TABLE_LEFT_IN = 0.583
+TABLE_TOP_IN = 1.127
+TABLE_WIDTH_IN = 12.483
+HEADER_ROW_HEIGHT_IN = 0.808
+SIDE_MARGIN_IN = SLIDE_WIDTH_IN - TABLE_LEFT_IN - TABLE_WIDTH_IN
+TABLE_HEIGHT_IN = SLIDE_HEIGHT_IN - TABLE_TOP_IN - SIDE_MARGIN_IN
+DATA_ROW_HEIGHT_IN = (TABLE_HEIGHT_IN - HEADER_ROW_HEIGHT_IN) / ROWS_PER_SLIDE
+
+SLIDE_WIDTH = Inches(SLIDE_WIDTH_IN)
+SLIDE_HEIGHT = Inches(SLIDE_HEIGHT_IN)
 TITLE_LEFT = Inches(0.614)
 TITLE_TOP = Inches(0.361)
 TITLE_WIDTH = Inches(8.5)
 LOGO_LEFT = Inches(10.255)
 LOGO_TOP = Inches(0.112)
 LOGO_WIDTH = Inches(2.65)
-TABLE_LEFT = Inches(0.583)
-TABLE_TOP = Inches(1.127)
-TABLE_WIDTH = Inches(12.483)
-HEADER_ROW_HEIGHT = Inches(0.808)
-DATA_ROW_HEIGHT = Inches(0.742)
+TABLE_LEFT = Inches(TABLE_LEFT_IN)
+TABLE_TOP = Inches(TABLE_TOP_IN)
+TABLE_WIDTH = Inches(TABLE_WIDTH_IN)
+HEADER_ROW_HEIGHT = Inches(HEADER_ROW_HEIGHT_IN)
+DATA_ROW_HEIGHT = Inches(DATA_ROW_HEIGHT_IN)
 CELL_MARGIN_LR = Pt(3)
 CELL_MARGIN_TB = Pt(2)
 
@@ -346,10 +356,10 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
     blank = prs.slide_layouts[6]
-    table_height = HEADER_ROW_HEIGHT + DATA_ROW_HEIGHT * ROWS_PER_SLIDE
 
     for page_index, chunk_start in enumerate(range(0, len(records), ROWS_PER_SLIDE), start=1):
         chunk = records[chunk_start : chunk_start + ROWS_PER_SLIDE]
+        table_height = Inches(HEADER_ROW_HEIGHT_IN + DATA_ROW_HEIGHT_IN * len(chunk))
         slide = prs.slides.add_slide(blank)
         add_logo(slide)
         add_slide_title(slide, page_index, total_pages)
