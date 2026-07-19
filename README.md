@@ -32,6 +32,10 @@ python generate_presentation.py
 | Предварительная оценка | Стоимость разработки, тыс.руб. |
 | Статус | Разработка / релиз / статус ЧТЗ |
 
+## Стиль и правила оформления
+
+Полные рекомендации Черкизово / MICHURIN: [`.cursor/rules/cherkizovo-presentations.md`](.cursor/rules/cherkizovo-presentations.md)
+
 ## Стиль из PDF-шаблона
 
 | Элемент | Шрифт | Размер | Цвет |
