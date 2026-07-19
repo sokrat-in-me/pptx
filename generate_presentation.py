@@ -80,6 +80,11 @@ def load_csv(path: Path) -> list[dict[str, str]]:
         team = get(row, "Команда")
         if not team:
             continue
+
+        row_text = " | ".join(row).lower()
+        if "осипова" not in row_text or "важно" in row_text:
+            continue
+
         records.append(
             {
                 "team": team,
