@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Generate pilot defects presentation from RTR CSV data using the PDF template."""
+"""Generate pilot defects presentation from RTR CSV data.
+
+Style and layout: ai/rules/cherkizovo-presentations.md
+Theme constants: ai/rules/cherkizovo_theme.py
+"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import math
-import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,49 +21,95 @@ from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
-ROWS_PER_SLIDE = 7
+RULES_DIR = Path(__file__).resolve().parent / "ai" / "rules"
+sys.path.insert(0, str(RULES_DIR.parent.parent))
+
+from ai.rules.cherkizovo_theme import (  # noqa: E402
+    CHARS_PER_INCH,
+    COLORS,
+    COLUMN_WIDTHS_IN,
+    CSV_EXCLUDE_TEXT,
+    CSV_INCLUDE_TEXT,
+    HEADER_ROW_HEIGHT_IN,
+    LINE_HEIGHT_IN,
+    LOGO_LEFT_IN,
+    LOGO_TOP_IN,
+    LOGO_WIDTH_IN,
+    MAX_DATA_HEIGHT_IN,
+    MIN_DATA_ROW_HEIGHT_IN,
+    PAGE_FONT,
+    PAGE_NUMBER_SIZE,
+    SLIDE_HEIGHT_IN,
+    SLIDE_TITLE_TEMPLATE,
+    SLIDE_WIDTH_IN,
+    STATUS_COL_WIDTH_IN,
+    TABLE_BODY_SIZE,
+    TABLE_COLUMNS,
+    TABLE_FONT,
+    TABLE_HEADER_SIZE,
+    TABLE_LEFT_IN,
+    TABLE_TOP_IN,
+    TABLE_WIDTH_IN,
+    TASK_COL_WIDTH_IN,
+    TITLE_FONT,
+    TITLE_LEFT_IN,
+    TITLE_SIZE,
+    TITLE_TOP_IN,
+    VALUE_COL_WIDTH_IN,
+)
+
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
 
 
+def rgb(name: str) -> RGBColor:
+    red, green, blue = COLORS[name]
+    return RGBColor(red, green, blue)
+
+
 @dataclass(frozen=True)
-class PdfTheme:
-    """Colors and fonts extracted from the updated PDF template."""
+class CherkizovoTheme:
+    """Runtime theme mapped from cherkizovo-presentations.md."""
 
-    title_font = "Verdana"
-    body_font = "Calibri"
+    title_font = TITLE_FONT
+    table_font = TABLE_FONT
+    page_font = PAGE_FONT
 
-    title_rgb = RGBColor(0x83, 0x12, 0x23)
-    text_rgb = RGBColor(0x00, 0x00, 0x00)
-    key_rgb = RGBColor(0x77, 0x77, 0x7A)
-    accent_rgb = RGBColor(0xFF, 0x00, 0x00)
-    header_bg_rgb = RGBColor(0xAF, 0x18, 0x2E)
-    header_fg_rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    alt_row_rgb = RGBColor(0xF8, 0xE7, 0xE8)
-    white_rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    title_rgb = rgb("title")
+    text_rgb = rgb("black")
+    key_rgb = rgb("key")
+    accent_rgb = rgb("critical")
+    header_bg_rgb = rgb("dark_red")
+    header_fg_rgb = rgb("white")
+    alt_row_rgb = rgb("alt_row")
+    white_rgb = rgb("white")
+    page_number_rgb = rgb("page_number")
 
-    title_size = 18
-    header_size = 12
-    body_size = 11
+    title_size = TITLE_SIZE
+    header_size = TABLE_HEADER_SIZE
+    body_size = TABLE_BODY_SIZE
+    page_number_size = PAGE_NUMBER_SIZE
 
 
-THEME = PdfTheme()
-COLUMNS = [
-    "№пп",
-    "Ключ",
-    "Задача",
-    "Ценность",
-    "Предварительная\nоценка\nреализации,\nтыс.руб.",
-    "Статус",
-]
-COLUMN_WIDTHS = [
-    Inches(0.45),
-    Inches(0.85),
-    Inches(3.75),
-    Inches(3.55),
-    Inches(1.2),
-    Inches(1.65),
-]
+THEME = CherkizovoTheme()
+
+SLIDE_WIDTH = Inches(SLIDE_WIDTH_IN)
+SLIDE_HEIGHT = Inches(SLIDE_HEIGHT_IN)
+TITLE_LEFT = Inches(TITLE_LEFT_IN)
+TITLE_TOP = Inches(TITLE_TOP_IN)
+TITLE_WIDTH = Inches(8.5)
+LOGO_LEFT = Inches(LOGO_LEFT_IN)
+LOGO_TOP = Inches(LOGO_TOP_IN)
+LOGO_WIDTH = Inches(LOGO_WIDTH_IN)
+TABLE_LEFT = Inches(TABLE_LEFT_IN)
+TABLE_TOP = Inches(TABLE_TOP_IN)
+TABLE_WIDTH = Inches(TABLE_WIDTH_IN)
+HEADER_ROW_HEIGHT = Inches(HEADER_ROW_HEIGHT_IN)
+CELL_MARGIN_LR = Pt(3)
+CELL_MARGIN_TB = Pt(2)
+
+COLUMNS = TABLE_COLUMNS
+COLUMN_WIDTHS = [Inches(width) for width in COLUMN_WIDTHS_IN]
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:
@@ -80,6 +130,11 @@ def load_csv(path: Path) -> list[dict[str, str]]:
         team = get(row, "Команда")
         if not team:
             continue
+
+        row_text = " | ".join(row).lower()
+        if CSV_INCLUDE_TEXT not in row_text or CSV_EXCLUDE_TEXT in row_text:
+            continue
+
         records.append(
             {
                 "team": team,
@@ -171,6 +226,60 @@ def cost_text(record: dict[str, str]) -> str:
     return cost
 
 
+def wrapped_lines(text: str, column_width_in: float) -> int:
+    if not text:
+        return 1
+    chars_per_line = max(1, int(column_width_in * CHARS_PER_INCH))
+    return max(1, math.ceil(len(text) / chars_per_line))
+
+
+def estimate_row_height(record: dict[str, str]) -> float:
+    task = "".join(text for text, _ in task_parts(record))
+    value = value_text(record)
+    status = status_text(record)
+    if is_critical(record):
+        status = f"{status}\nКритичная!"
+
+    lines = max(
+        wrapped_lines(task, TASK_COL_WIDTH_IN),
+        wrapped_lines(value, VALUE_COL_WIDTH_IN),
+        wrapped_lines(status, STATUS_COL_WIDTH_IN),
+    )
+    return max(MIN_DATA_ROW_HEIGHT_IN, lines * LINE_HEIGHT_IN + 0.08)
+
+
+def finalize_row_heights(natural_heights: list[float]) -> list[float]:
+    if not natural_heights:
+        return []
+    natural_total = sum(natural_heights)
+    if natural_total <= MAX_DATA_HEIGHT_IN:
+        return natural_heights
+    ratio = MAX_DATA_HEIGHT_IN / natural_total
+    return [height * ratio for height in natural_heights]
+
+
+def pack_slides(records: list[dict[str, str]]) -> list[tuple[list[dict[str, str]], list[float]]]:
+    slides: list[tuple[list[dict[str, str]], list[float]]] = []
+    current_records: list[dict[str, str]] = []
+    current_heights: list[float] = []
+
+    for record in records:
+        row_height = estimate_row_height(record)
+        used_height = sum(current_heights)
+        if current_records and used_height + row_height > MAX_DATA_HEIGHT_IN:
+            slides.append((current_records, finalize_row_heights(current_heights)))
+            current_records = []
+            current_heights = []
+
+        current_records.append(record)
+        current_heights.append(row_height)
+
+    if current_records:
+        slides.append((current_records, finalize_row_heights(current_heights)))
+
+    return slides
+
+
 def set_cell_border(cell, *, color: str = "000000", width: str = "6350") -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     for edge in ("lnL", "lnR", "lnT", "lnB"):
@@ -249,12 +358,16 @@ def set_cell_runs(
 ) -> None:
     cell.text = ""
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-    cell.margin_left = Pt(4)
-    cell.margin_right = Pt(4)
-    cell.margin_top = Pt(2)
-    cell.margin_bottom = Pt(2)
+    cell.margin_left = CELL_MARGIN_LR
+    cell.margin_right = CELL_MARGIN_LR
+    cell.margin_top = CELL_MARGIN_TB
+    cell.margin_bottom = CELL_MARGIN_TB
+    cell.text_frame.word_wrap = True
     paragraph = cell.text_frame.paragraphs[0]
     paragraph.alignment = align
+    paragraph.space_before = Pt(0)
+    paragraph.space_after = Pt(0)
+    paragraph.line_spacing = 1.0
     for text, bold, color in runs:
         if not text:
             continue
@@ -262,7 +375,7 @@ def set_cell_runs(
         run.text = text
         set_run_font(
             run,
-            font_name=THEME.body_font,
+            font_name=THEME.table_font,
             size=size,
             bold=bold,
             color=color or THEME.text_rgb,
@@ -276,7 +389,7 @@ def set_cell(
     cell,
     text: str,
     *,
-    font_name: str = THEME.body_font,
+    font_name: str = THEME.table_font,
     bold: bool = False,
     size: int = THEME.body_size,
     align=PP_ALIGN.LEFT,
@@ -297,14 +410,14 @@ def set_cell(
 def add_logo(slide) -> None:
     if not LOGO_PATH.exists():
         return
-    slide.shapes.add_picture(str(LOGO_PATH), Inches(10.55), Inches(0.08), width=Inches(2.35))
+    slide.shapes.add_picture(str(LOGO_PATH), LOGO_LEFT, LOGO_TOP, width=LOGO_WIDTH)
 
 
 def add_slide_title(slide, page_index: int, total_pages: int) -> None:
-    title_box = slide.shapes.add_textbox(Inches(0.35), Inches(0.12), Inches(9.5), Inches(0.55))
+    title_box = slide.shapes.add_textbox(TITLE_LEFT, TITLE_TOP, TITLE_WIDTH, Inches(0.45))
     set_textbox(
         title_box.text_frame,
-        f"Дефекты и разработки по Пилоту ({page_index}/{total_pages})",
+        SLIDE_TITLE_TEMPLATE.format(page=page_index, total=total_pages),
         font_name=THEME.title_font,
         size=THEME.title_size,
         bold=True,
@@ -313,36 +426,43 @@ def add_slide_title(slide, page_index: int, total_pages: int) -> None:
 
 
 def build_presentation(records: list[dict[str, str]], output_path: Path) -> None:
-    total_pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
+    slides = pack_slides(records)
+    total_pages = max(1, len(slides))
+    row_offset = 0
 
     prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = SLIDE_WIDTH
+    prs.slide_height = SLIDE_HEIGHT
     blank = prs.slide_layouts[6]
 
-    for page_index, chunk_start in enumerate(range(0, len(records), ROWS_PER_SLIDE), start=1):
-        chunk = records[chunk_start : chunk_start + ROWS_PER_SLIDE]
+    for page_index, (chunk, row_heights) in enumerate(slides, start=1):
         slide = prs.slides.add_slide(blank)
         add_logo(slide)
         add_slide_title(slide, page_index, total_pages)
 
+        table_height = Inches(HEADER_ROW_HEIGHT_IN + sum(row_heights))
+
         table_shape = slide.shapes.add_table(
             len(chunk) + 1,
             len(COLUMNS),
-            Inches(0.35),
-            Inches(0.75),
-            sum(COLUMN_WIDTHS),
-            Inches(6.35),
+            TABLE_LEFT,
+            TABLE_TOP,
+            TABLE_WIDTH,
+            table_height,
         )
         table = table_shape.table
         for index, width in enumerate(COLUMN_WIDTHS):
             table.columns[index].width = width
 
+        table.rows[0].height = HEADER_ROW_HEIGHT
+        for row_index, row_height in enumerate(row_heights, start=1):
+            table.rows[row_index].height = Inches(row_height)
+
         for column_index, title in enumerate(COLUMNS):
             set_cell(
                 table.cell(0, column_index),
                 title,
-                font_name=THEME.body_font,
+                font_name=THEME.table_font,
                 bold=True,
                 size=THEME.header_size,
                 align=PP_ALIGN.CENTER,
@@ -351,7 +471,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             )
 
         for row_index, record in enumerate(chunk, start=1):
-            row_number = chunk_start + row_index
+            row_number = row_offset + row_index
             fill = THEME.alt_row_rgb if row_index % 2 == 0 else THEME.white_rgb
             critical = is_critical(record)
             accent = THEME.accent_rgb if critical else THEME.text_rgb
@@ -383,7 +503,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
                 table.cell(row_index, 4),
                 cost_text(record),
                 bold=critical and bool(cost_text(record)),
-                align=PP_ALIGN.CENTER,
+                align=PP_ALIGN.RIGHT,
                 fill=fill,
                 font_color=accent if critical and cost_text(record) else THEME.text_rgb,
             )
@@ -400,6 +520,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             )
 
         style_table_borders(table)
+        row_offset += len(chunk)
 
     prs.save(output_path)
 
@@ -422,8 +543,8 @@ def main() -> None:
 
     records = load_csv(args.csv)
     build_presentation(records, args.output)
-    pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
-    print(f"Created {args.output} with {len(records)} tasks across {pages} slides")
+    slides = pack_slides(records)
+    print(f"Created {args.output} with {len(records)} tasks across {len(slides)} slides")
 
 
 if __name__ == "__main__":
