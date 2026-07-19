@@ -159,8 +159,6 @@
 |------|------------|
 | `themes/cherkizovo.py` | Константы темы и макета (единый источник для кода) |
 | `themes/michurin.py` | Применение темы МИЧУРИН к презентации (цвета, шрифты, ссылки) |
-| `create_michurin_template.py` | Генератор шаблона `assets/MICHURIN.pptx` |
-| `assets/MICHURIN.pptx` | Шаблон PowerPoint с темой МИЧУРИН |
 | `generate_presentation.py` | Генератор презентации |
 | `assets/logo_0.png` | Логотип Черкизово (белый фон) |
 | `data/RTR-status.csv` | Исходные данные |

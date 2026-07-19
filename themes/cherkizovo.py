@@ -8,7 +8,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 STYLE_GUIDE_PATH = _REPO_ROOT / "ai" / "rules" / "cherkizovo-presentations.md"
 
 THEME_NAME = "МИЧУРИН"
-TEMPLATE_PATH = _REPO_ROOT / "assets" / "MICHURIN.pptx"
 
 # Slide format (section 5)
 SLIDE_WIDTH_IN = 13.333
