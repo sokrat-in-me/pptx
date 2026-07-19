@@ -75,7 +75,6 @@ TABLE_LEFT = Inches(TABLE_LEFT_IN)
 TABLE_TOP = Inches(TABLE_TOP_IN)
 TABLE_WIDTH = Inches(TABLE_WIDTH_IN)
 HEADER_ROW_HEIGHT = Inches(HEADER_ROW_HEIGHT_IN)
-TABLE_HEIGHT = Inches(MAX_TABLE_HEIGHT_IN)
 CELL_MARGIN_LR = Pt(3)
 CELL_MARGIN_TB = Pt(2)
 
@@ -233,16 +232,14 @@ def estimate_row_height(record: dict[str, str]) -> float:
     return max(MIN_DATA_ROW_HEIGHT_IN, lines * LINE_HEIGHT_IN + 0.08)
 
 
-def distribute_row_heights(natural_heights: list[float]) -> list[float]:
+def finalize_row_heights(natural_heights: list[float]) -> list[float]:
     if not natural_heights:
         return []
     natural_total = sum(natural_heights)
-    if natural_total >= MAX_DATA_HEIGHT_IN:
-        ratio = MAX_DATA_HEIGHT_IN / natural_total
-        return [height * ratio for height in natural_heights]
-
-    extra = MAX_DATA_HEIGHT_IN - natural_total
-    return [height + extra * (height / natural_total) for height in natural_heights]
+    if natural_total <= MAX_DATA_HEIGHT_IN:
+        return natural_heights
+    ratio = MAX_DATA_HEIGHT_IN / natural_total
+    return [height * ratio for height in natural_heights]
 
 
 def pack_slides(records: list[dict[str, str]]) -> list[tuple[list[dict[str, str]], list[float]]]:
@@ -254,7 +251,7 @@ def pack_slides(records: list[dict[str, str]]) -> list[tuple[list[dict[str, str]
         row_height = estimate_row_height(record)
         used_height = sum(current_heights)
         if current_records and used_height + row_height > MAX_DATA_HEIGHT_IN:
-            slides.append((current_records, distribute_row_heights(current_heights)))
+            slides.append((current_records, finalize_row_heights(current_heights)))
             current_records = []
             current_heights = []
 
@@ -262,7 +259,7 @@ def pack_slides(records: list[dict[str, str]]) -> list[tuple[list[dict[str, str]
         current_heights.append(row_height)
 
     if current_records:
-        slides.append((current_records, distribute_row_heights(current_heights)))
+        slides.append((current_records, finalize_row_heights(current_heights)))
 
     return slides
 
@@ -427,13 +424,15 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
         add_logo(slide)
         add_slide_title(slide, page_index, total_pages)
 
+        table_height = Inches(HEADER_ROW_HEIGHT_IN + sum(row_heights))
+
         table_shape = slide.shapes.add_table(
             len(chunk) + 1,
             len(COLUMNS),
             TABLE_LEFT,
             TABLE_TOP,
             TABLE_WIDTH,
-            TABLE_HEIGHT,
+            table_height,
         )
         table = table_shape.table
         for index, width in enumerate(COLUMN_WIDTHS):
