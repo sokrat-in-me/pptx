@@ -431,7 +431,7 @@ def build_gantt_slide(
     )
     set_textbox(
         title_box.text_frame,
-        f"{group.title} ({page_index}/{total_pages})",
+        group.title,
         font_name=TITLE_FONT,
         size=TITLE_SIZE,
         bold=True,
