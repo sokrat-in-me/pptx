@@ -2,7 +2,7 @@
 """Generate pilot defects presentation from RTR CSV data.
 
 Style and layout: ai/rules/cherkizovo-presentations.md
-Theme constants: themes/cherkizovo.py
+Theme: themes/cherkizovo.py
 """
 
 from __future__ import annotations
@@ -57,8 +57,8 @@ from themes.cherkizovo import (  # noqa: E402
     TITLE_TOP_IN,
     TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
+    apply_cherkizovo_theme,
 )
-from themes.michurin import apply_michurin_theme  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
@@ -471,7 +471,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
-    apply_michurin_theme(prs)
+    apply_cherkizovo_theme(prs)
     blank = prs.slide_layouts[6]
 
     for page_index, (chunk, row_heights) in enumerate(slides, start=1):

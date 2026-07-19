@@ -2,7 +2,7 @@
 """Generate RTR launch schedule presentation from CSV.
 
 Style and layout: ai/rules/cherkizovo-presentations.md
-Theme: themes/cherkizovo.py, themes/michurin.py
+Theme: themes/cherkizovo.py
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ from themes.cherkizovo import (  # noqa: E402
     TITLE_LEFT_IN,
     TITLE_SIZE,
     TITLE_TOP_IN,
+    apply_cherkizovo_theme,
 )
-from themes.michurin import apply_michurin_theme  # noqa: E402
 
 ASSETS_DIR = ROOT_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
@@ -542,7 +542,7 @@ def build_presentation(
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_WIDTH_IN)
     prs.slide_height = Inches(SLIDE_HEIGHT_IN)
-    apply_michurin_theme(prs)
+    apply_cherkizovo_theme(prs)
 
     for page_index, group in enumerate(groups, start=1):
         build_gantt_slide(
