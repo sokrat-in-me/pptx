@@ -7,11 +7,14 @@ import argparse
 import csv
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
+from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
 SEGMENT_ORDER = [
@@ -22,6 +25,36 @@ SEGMENT_ORDER = [
     "Прочее",
 ]
 ROWS_PER_SLIDE = 8
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+LOGO_PATH = ASSETS_DIR / "logo_0.png"
+
+
+@dataclass(frozen=True)
+class PdfTheme:
+    """Colors and fonts extracted from the PDF template."""
+
+    title_font = "Verdana"
+    body_font = "Verdana"
+    page_font = "Calibri"
+
+    title_rgb = RGBColor(0x1E, 0x20, 0x24)
+    text_rgb = RGBColor(0x00, 0x00, 0x00)
+    accent_rgb = RGBColor(0xFF, 0x00, 0x00)
+    page_number_rgb = RGBColor(0x9A, 0xA0, 0xA6)
+    header_bg_rgb = RGBColor(0xAE, 0x17, 0x2D)
+    header_fg_rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    segment_bg_rgb = RGBColor(0xF0, 0xF0, 0xF0)
+    white_rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    title_size = 20
+    header_size = 8
+    body_size = 11
+    segment_size = 8
+    footnote_size = 10
+    page_number_size = 9
+
+
+THEME = PdfTheme()
 
 
 def parse_num(value: str) -> float | None:
@@ -116,6 +149,11 @@ def proposal_text(row: dict[str, str]) -> str:
     return "; ".join(dict.fromkeys(parts)) or "В работе"
 
 
+def proposal_is_accent(text: str) -> bool:
+    lowered = text.lower()
+    return lowered.startswith("уточнить") or "важно" in lowered
+
+
 def load_csv(path: Path) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
     with path.open(encoding="utf-8-sig") as handle:
         rows = list(csv.reader(handle))
@@ -171,12 +209,85 @@ def load_csv(path: Path) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
     return release_info, records
 
 
+def set_cell_border(cell, *, color: str = "000000", width: str = "12700") -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    for edge in ("lnL", "lnR", "lnT", "lnB"):
+        tag = qn(f"a:{edge}")
+        element = tc_pr.find(tag)
+        if element is None:
+            element = OxmlElement(f"a:{edge}")
+            tc_pr.append(element)
+        element.set("w", width)
+        element.set("cap", "flat")
+        element.set("cmpd", "sng")
+        element.set("algn", "ctr")
+        fill = element.find(qn("a:solidFill"))
+        if fill is None:
+            fill = OxmlElement("a:solidFill")
+            element.append(fill)
+        srgb = fill.find(qn("a:srgbClr"))
+        if srgb is None:
+            srgb = OxmlElement("a:srgbClr")
+            fill.append(srgb)
+        srgb.set("val", color)
+
+
+def style_table_borders(table) -> None:
+    for row in table.rows:
+        for cell in row.cells:
+            set_cell_border(cell)
+
+
+def set_run_font(
+    run,
+    *,
+    font_name: str,
+    size: int,
+    bold: bool = False,
+    italic: bool = False,
+    color: RGBColor | None = None,
+) -> None:
+    run.font.name = font_name
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.italic = italic
+    if color is not None:
+        run.font.color.rgb = color
+
+
+def set_textbox(
+    text_frame,
+    text: str,
+    *,
+    font_name: str,
+    size: int,
+    bold: bool = False,
+    italic: bool = False,
+    color: RGBColor | None = None,
+    align: PP_ALIGN = PP_ALIGN.LEFT,
+) -> None:
+    text_frame.clear()
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = align
+    run = paragraph.add_run()
+    run.text = text
+    set_run_font(
+        run,
+        font_name=font_name,
+        size=size,
+        bold=bold,
+        italic=italic,
+        color=color or THEME.text_rgb,
+    )
+
+
 def set_cell(
     cell,
     text: str,
     *,
+    font_name: str = THEME.body_font,
     bold: bool = False,
-    size: int = 9,
+    size: int = THEME.body_size,
     align=PP_ALIGN.LEFT,
     fill: RGBColor | None = None,
     font_color: RGBColor | None = None,
@@ -190,14 +301,62 @@ def set_cell(
     for paragraph in cell.text_frame.paragraphs:
         paragraph.alignment = align
         for run in paragraph.runs:
-            run.font.size = Pt(size)
-            run.font.name = "Calibri"
-            run.font.bold = bold
-            if font_color is not None:
-                run.font.color.rgb = font_color
+            set_run_font(
+                run,
+                font_name=font_name,
+                size=size,
+                bold=bold,
+                color=font_color or THEME.text_rgb,
+            )
     if fill is not None:
         cell.fill.solid()
         cell.fill.fore_color.rgb = fill
+
+
+def add_logo(slide) -> None:
+    if not LOGO_PATH.exists():
+        return
+    slide.shapes.add_picture(
+        str(LOGO_PATH),
+        Inches(10.55),
+        Inches(0.12),
+        width=Inches(2.35),
+    )
+
+
+def add_slide_title(slide, title: str) -> None:
+    title_box = slide.shapes.add_textbox(Inches(0.35), Inches(0.12), Inches(9.8), Inches(0.7))
+    set_textbox(
+        title_box.text_frame,
+        title,
+        font_name=THEME.title_font,
+        size=THEME.title_size,
+        bold=True,
+        color=THEME.title_rgb,
+    )
+
+
+def add_page_number(slide, number: int) -> None:
+    number_box = slide.shapes.add_textbox(Inches(12.45), Inches(7.0), Inches(0.55), Inches(0.3))
+    set_textbox(
+        number_box.text_frame,
+        str(number),
+        font_name=THEME.page_font,
+        size=THEME.page_number_size,
+        color=THEME.page_number_rgb,
+        align=PP_ALIGN.RIGHT,
+    )
+
+
+def add_footnotes(slide) -> None:
+    notes = slide.shapes.add_textbox(Inches(0.35), Inches(6.95), Inches(10.5), Inches(0.35))
+    set_textbox(
+        notes.text_frame,
+        "*  оценка по Пилоту\n** трудозатраты: аналитик + разработчик",
+        font_name=THEME.body_font,
+        size=THEME.footnote_size,
+        color=THEME.text_rgb,
+    )
 
 
 def build_presentation(
@@ -223,47 +382,51 @@ def build_presentation(
     prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
 
-    title_color = RGBColor(31, 78, 121)
-    header_bg = RGBColor(31, 78, 121)
-    header_fg = RGBColor(255, 255, 255)
-    alt_row = RGBColor(238, 245, 251)
-
     title_slide = prs.slides.add_slide(blank)
-    title_box = title_slide.shapes.add_textbox(Inches(0.5), Inches(2.2), Inches(12.3), Inches(1.2))
-    title_paragraph = title_box.text_frame.paragraphs[0]
-    title_paragraph.text = "Критика отчетности ERP по сегментам"
-    title_paragraph.alignment = PP_ALIGN.CENTER
-    title_paragraph.font.size = Pt(36)
-    title_paragraph.font.bold = True
-    title_paragraph.font.name = "Calibri"
-    title_paragraph.font.color.rgb = title_color
+    add_logo(title_slide)
+    title_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(2.0), Inches(8.5), Inches(1.0))
+    set_textbox(
+        title_box.text_frame,
+        "Критика отчетности ERP\nпо сегментам",
+        font_name=THEME.title_font,
+        size=THEME.title_size,
+        bold=True,
+        color=THEME.title_rgb,
+    )
 
-    subtitle_box = title_slide.shapes.add_textbox(Inches(0.5), Inches(3.5), Inches(12.3), Inches(0.8))
-    subtitle = subtitle_box.text_frame.paragraphs[0]
-    subtitle.text = "Статус пилота и план доработок (данные на 14.07)"
-    subtitle.alignment = PP_ALIGN.CENTER
-    subtitle.font.size = Pt(18)
-    subtitle.font.name = "Calibri"
-    subtitle.font.color.rgb = RGBColor(68, 68, 68)
+    subtitle_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(3.2), Inches(9.0), Inches(0.5))
+    set_textbox(
+        subtitle_box.text_frame,
+        "Статус пилота и план доработок (данные на 14.07)",
+        font_name=THEME.body_font,
+        size=THEME.body_size,
+        color=THEME.text_rgb,
+    )
 
     if release_info:
-        release_box = title_slide.shapes.add_textbox(Inches(1.2), Inches(4.5), Inches(10.9), Inches(1.8))
+        release_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(4.0), Inches(8.5), Inches(1.8))
         release_frame = release_box.text_frame
+        release_frame.clear()
         for index, (release, deadline) in enumerate(release_info):
             paragraph = release_frame.paragraphs[0] if index == 0 else release_frame.add_paragraph()
-            paragraph.text = (
+            paragraph.alignment = PP_ALIGN.LEFT
+            run = paragraph.add_run()
+            run.text = (
                 f"{release}: дедлайн согласования ЧТЗ — {deadline}" if deadline else release
             )
-            paragraph.font.size = Pt(14)
-            paragraph.font.name = "Calibri"
-            paragraph.alignment = PP_ALIGN.CENTER
+            set_run_font(
+                run,
+                font_name=THEME.body_font,
+                size=THEME.body_size,
+                color=THEME.text_rgb,
+            )
 
     columns = [
         "Сегмент",
         "Доработка\nотчета",
         "Новый\nотчет",
         "Описание",
-        "Трудоемкость\n(часы)*",
+        "Трудоемкость\n, ЧЧ/мес*",
         "Предложение",
     ]
     widths = [Inches(1.35), Inches(0.75), Inches(0.75), Inches(5.2), Inches(1.15), Inches(3.45)]
@@ -272,30 +435,16 @@ def build_presentation(
     for chunk_start in range(0, len(flat_records), ROWS_PER_SLIDE):
         chunk = flat_records[chunk_start : chunk_start + ROWS_PER_SLIDE]
         slide = prs.slides.add_slide(blank)
-
-        header = slide.shapes.add_textbox(Inches(0.4), Inches(0.15), Inches(10), Inches(0.45))
-        header_paragraph = header.text_frame.paragraphs[0]
-        header_paragraph.text = "Критика отчетности ERP по сегментам"
-        header_paragraph.font.size = Pt(20)
-        header_paragraph.font.bold = True
-        header_paragraph.font.name = "Calibri"
-        header_paragraph.font.color.rgb = title_color
-
-        number_box = slide.shapes.add_textbox(Inches(12.3), Inches(0.15), Inches(0.7), Inches(0.45))
-        number_paragraph = number_box.text_frame.paragraphs[0]
-        number_paragraph.text = str(slide_number)
-        number_paragraph.alignment = PP_ALIGN.RIGHT
-        number_paragraph.font.size = Pt(18)
-        number_paragraph.font.bold = True
-        number_paragraph.font.name = "Calibri"
+        add_logo(slide)
+        add_slide_title(slide, "Критика отчетности ERP по сегментам")
 
         table_shape = slide.shapes.add_table(
             len(chunk) + 1,
             len(columns),
             Inches(0.35),
-            Inches(0.65),
+            Inches(0.85),
             sum(widths),
-            Inches(5.7),
+            Inches(5.85),
         )
         table = table_shape.table
         for index, width in enumerate(widths):
@@ -305,51 +454,54 @@ def build_presentation(
             set_cell(
                 table.cell(0, column_index),
                 title,
+                font_name=THEME.title_font,
                 bold=True,
-                size=9,
+                size=THEME.header_size,
                 align=PP_ALIGN.CENTER,
-                fill=header_bg,
-                font_color=header_fg,
+                fill=THEME.header_bg_rgb,
+                font_color=THEME.header_fg_rgb,
             )
 
         for row_index, record in enumerate(chunk, start=1):
             description = record["description"]
             if len(description) > 260:
                 description = description[:257] + "..."
+            proposal = proposal_text(record)
             values = [
-                map_segment(record),
-                "V" if is_modification(record["defect"]) else "",
-                "V" if is_new_report(record["defect"]) else "",
-                description,
-                labor_text(record),
-                proposal_text(record),
+                (map_segment(record), 0, True, False, THEME.segment_bg_rgb, THEME.text_rgb),
+                ("V" if is_modification(record["defect"]) else "", 1, True, False, THEME.white_rgb, THEME.text_rgb),
+                ("V" if is_new_report(record["defect"]) else "", 2, True, False, THEME.white_rgb, THEME.text_rgb),
+                (description, 3, False, False, THEME.white_rgb, THEME.text_rgb),
+                (labor_text(record), 4, True, False, THEME.white_rgb, THEME.text_rgb),
+                (
+                    proposal,
+                    5,
+                    False,
+                    proposal_is_accent(proposal),
+                    THEME.white_rgb,
+                    THEME.accent_rgb if proposal_is_accent(proposal) else THEME.text_rgb,
+                ),
             ]
-            fill = alt_row if row_index % 2 == 0 else None
-            for column_index, value in enumerate(values):
+            for value, column_index, bold, _, fill, color in values:
                 set_cell(
                     table.cell(row_index, column_index),
                     value,
-                    size=8,
+                    font_name=THEME.title_font if column_index == 0 else THEME.body_font,
+                    size=THEME.segment_size if column_index == 0 else THEME.body_size,
+                    bold=bold,
                     align=PP_ALIGN.CENTER if column_index in (1, 2, 4) else PP_ALIGN.LEFT,
                     fill=fill,
+                    font_color=color,
                 )
 
-        notes = slide.shapes.add_textbox(Inches(0.4), Inches(6.55), Inches(12.5), Inches(0.7))
-        notes_paragraph = notes.text_frame.paragraphs[0]
-        notes_paragraph.text = "* оценка по Пилоту    ** трудозатраты: аналитик + разработчик"
-        notes_paragraph.font.size = Pt(10)
-        notes_paragraph.font.italic = True
-        notes_paragraph.font.name = "Calibri"
-        notes_paragraph.font.color.rgb = RGBColor(102, 102, 102)
-
+        style_table_borders(table)
+        add_footnotes(slide)
+        add_page_number(slide, slide_number)
         slide_number += 1
 
     summary_slide = prs.slides.add_slide(blank)
-    summary_header = summary_slide.shapes.add_textbox(Inches(0.4), Inches(0.2), Inches(12), Inches(0.5))
-    summary_header.text_frame.paragraphs[0].text = "Сводка по сегментам"
-    summary_header.text_frame.paragraphs[0].font.size = Pt(24)
-    summary_header.text_frame.paragraphs[0].font.bold = True
-    summary_header.text_frame.paragraphs[0].font.color.rgb = title_color
+    add_logo(summary_slide)
+    add_slide_title(summary_slide, "Сводка по сегментам")
 
     summary_columns = [
         "Сегмент",
@@ -374,11 +526,12 @@ def build_presentation(
         set_cell(
             summary_table.cell(0, column_index),
             title,
+            font_name=THEME.title_font,
             bold=True,
-            size=11,
+            size=THEME.header_size,
             align=PP_ALIGN.CENTER,
-            fill=header_bg,
-            font_color=header_fg,
+            fill=THEME.header_bg_rgb,
+            font_color=THEME.header_fg_rgb,
         )
 
     for row_index, segment in enumerate(ordered_segments, start=1):
@@ -391,14 +544,19 @@ def build_presentation(
         )
         values = [segment, len(items), modifications, new_reports, int(hours)]
         for column_index, value in enumerate(values):
+            fill = THEME.segment_bg_rgb if column_index == 0 else THEME.white_rgb
             set_cell(
                 summary_table.cell(row_index, column_index),
                 value,
-                size=11,
+                font_name=THEME.title_font if column_index == 0 else THEME.body_font,
+                size=THEME.segment_size if column_index == 0 else THEME.body_size,
+                bold=column_index == 0,
                 align=PP_ALIGN.CENTER,
-                fill=alt_row if row_index % 2 == 0 else None,
+                fill=fill,
             )
 
+    style_table_borders(summary_table)
+    add_page_number(summary_slide, slide_number)
     prs.save(output_path)
 
 
