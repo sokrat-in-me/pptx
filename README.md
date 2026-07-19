@@ -13,6 +13,14 @@ pip install -r requirements.txt
 python generate_presentation.py
 ```
 
+### График запуска RTR
+
+```bash
+python generate_launch_schedule.py
+```
+
+Результат: `График_запуска_RTR.pptx` — диаграмма Ганта по данным `data/RTR-launch-schedule.csv`.
+
 ## Структура слайдов
 
 Каждый слайд повторяет шаблон PDF:
