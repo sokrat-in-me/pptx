@@ -58,6 +58,7 @@ from ai.rules.cherkizovo_theme import (  # noqa: E402
     TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
 )
+from ai.rules.michurin_theme import apply_michurin_theme  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
@@ -470,6 +471,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
+    apply_michurin_theme(prs)
     blank = prs.slide_layouts[6]
 
     for page_index, (chunk, row_heights) in enumerate(slides, start=1):
