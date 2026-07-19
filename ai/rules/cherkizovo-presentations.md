@@ -157,7 +157,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `themes/cherkizovo_theme.py` | Константы темы и макета (единый источник для кода) |
+| `themes/cherkizovo.py` | Константы темы и макета (единый источник для кода) |
 | `themes/michurin_theme.py` | Применение темы МИЧУРИН к презентации (цвета, шрифты, ссылки) |
 | `create_michurin_template.py` | Генератор шаблона `assets/MICHURIN.pptx` |
 | `assets/MICHURIN.pptx` | Шаблон PowerPoint с темой МИЧУРИН |

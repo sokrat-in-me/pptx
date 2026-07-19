@@ -6,7 +6,7 @@ from lxml import etree
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
-from themes.cherkizovo_theme import OFFICE_COLOR_SCHEME_HEX, THEME_NAME, TITLE_FONT
+from themes.cherkizovo import OFFICE_COLOR_SCHEME_HEX, THEME_NAME, TITLE_FONT
 
 _DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _NSMAP = {"a": _DRAWING_NS}

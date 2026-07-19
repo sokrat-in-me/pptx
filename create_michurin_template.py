@@ -15,7 +15,7 @@ from pptx.util import Inches, Pt
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from themes.cherkizovo_theme import (  # noqa: E402
+from themes.cherkizovo import (  # noqa: E402
     COLORS,
     LOGO_LEFT_IN,
     LOGO_TOP_IN,

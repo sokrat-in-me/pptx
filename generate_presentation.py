@@ -2,7 +2,7 @@
 """Generate pilot defects presentation from RTR CSV data.
 
 Style and layout: ai/rules/cherkizovo-presentations.md
-Theme constants: themes/cherkizovo_theme.py
+Theme constants: themes/cherkizovo.py
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pptx.util import Inches, Pt
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from themes.cherkizovo_theme import (  # noqa: E402
+from themes.cherkizovo import (  # noqa: E402
     CHARS_PER_INCH,
     COLORS,
     COLUMN_WIDTHS_IN,
