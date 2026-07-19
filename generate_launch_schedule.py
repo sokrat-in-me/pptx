@@ -2,7 +2,7 @@
 """Generate RTR launch schedule presentation from CSV.
 
 Style and layout: ai/rules/cherkizovo-presentations.md
-Theme: themes/michurin.py
+Theme: themes/cherkizovo.py
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pptx.util import Inches, Pt
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from themes.michurin import (  # noqa: E402
+from themes.cherkizovo import (  # noqa: E402
     COLORS,
     LOGO_LEFT_IN,
     LOGO_TOP_IN,
