@@ -1,0 +1,44 @@
+{
+  "title": "Бэклог задач команды RTR-УУ",
+  "team": "RTR-УУ",
+  "footnotes": [
+    "* приоритет: Высокий",
+    "** трудозатраты: аналитик + разработчик, ч"
+  ],
+  "tasks": [
+    {
+      "category": "Ошибка функционала",
+      "is_refinement": true,
+      "is_new": false,
+      "task_key": "DEFPROD-8589",
+      "dev_key": null,
+      "description": "Реализовать контроль по организации в ЗНО",
+      "priority": "Высокий",
+      "complexity": "(3) — свинка",
+      "comments": null,
+      "responsible": "Осипова Анастасия Витальевна",
+      "analytics_hours": 120,
+      "dev_hours": 120,
+      "analyst": null,
+      "cost_k_rub": 1200,
+      "value": "ВАЖНО! Высокие риски. Исключит применение некорректных настроек."
+    },
+    {
+      "category": "Разработка",
+      "is_refinement": false,
+      "is_new": true,
+      "task_key": "DEV-16726",
+      "dev_key": null,
+      "description": "Реализовать алгоритм расчета отсрочки End of month",
+      "priority": "Высокий",
+      "complexity": "(3) — свинка",
+      "comments": null,
+      "responsible": "Осипова Анастасия Витальевна",
+      "analytics_hours": 60,
+      "dev_hours": 60,
+      "analyst": null,
+      "cost_k_rub": 600,
+      "value": "ВАЖНО! Рост среднего количества обращений. Снижение трудозатрат на ручной расчет."
+    }
+  ]
+}
