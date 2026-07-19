@@ -72,9 +72,27 @@ YEAR_HEADER_HEIGHT_IN = 0.28
 MONTH_HEADER_HEIGHT_IN = 0.28
 MIN_ROW_HEIGHT_IN = 0.2
 
+# Светлая палитра для диаграммы Ганта (на базе корпоративных оттенков МИЧУРИН)
+LIGHT_COLORS = {
+    "title_slide_bg": (253, 245, 246),   # #FDF5F6
+    "title": (131, 18, 35),            # #831223
+    "subtitle": (119, 119, 122),        # #77777A
+    "header": (245, 180, 188),         # #F5B4BC — заголовки колонок
+    "year_header": (252, 220, 224),    # #FCDCE0 — строка годов
+    "subsection": (250, 228, 231),     # #FAE4E7 — подзаголовки секций
+    "mark": (255, 210, 216),           # #FFD2D8 — ячейки графика
+    "mark_text": (150, 40, 55),        # #962837
+    "header_text": (100, 30, 40),      # #641E28
+    "alt_row": (252, 248, 249),        # #FCF8F9
+    "text": (50, 50, 50),              # #323232
+}
+
 
 def rgb(name: str) -> RGBColor:
-    red, green, blue = COLORS[name]
+    if name in LIGHT_COLORS:
+        red, green, blue = LIGHT_COLORS[name]
+    else:
+        red, green, blue = COLORS[name]
     return RGBColor(red, green, blue)
 
 
@@ -215,7 +233,7 @@ def group_slides(records: list[ScheduleRow]) -> list[SlideGroup]:
     return groups[:MAX_GANTT_SLIDES]
 
 
-def set_cell_border(cell, *, color: str = "000000", width: str = "6350") -> None:
+def set_cell_border(cell, *, color: str = "E8C4C8", width: str = "6350") -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     for edge in ("lnL", "lnR", "lnT", "lnB"):
         tag = qn(f"a:{edge}")
@@ -290,7 +308,7 @@ def set_cell(
         font_name=font_name,
         size=size,
         bold=bold,
-        color=font_color or rgb("black"),
+        color=font_color or rgb("text"),
     )
     if fill is not None:
         cell.fill.solid()
@@ -327,7 +345,7 @@ def set_textbox(
         font_name=font_name,
         size=size,
         bold=bold,
-        color=color or rgb("black"),
+        color=color or rgb("text"),
     )
 
 
@@ -336,7 +354,7 @@ def add_title_slide(prs: Presentation) -> None:
     background = slide.background
     fill = background.fill
     fill.solid()
-    fill.fore_color.rgb = rgb("dark_burgundy")
+    fill.fore_color.rgb = rgb("title_slide_bg")
 
     title_box = slide.shapes.add_textbox(
         Inches(TITLE_LEFT_IN),
@@ -350,7 +368,7 @@ def add_title_slide(prs: Presentation) -> None:
         font_name=TITLE_FONT,
         size=32,
         bold=True,
-        color=rgb("white"),
+        color=rgb("title"),
     )
 
     subtitle_box = slide.shapes.add_textbox(
@@ -364,7 +382,7 @@ def add_title_slide(prs: Presentation) -> None:
         "RTR — управленческий учёт\nMTD и продуктивный контур",
         font_name=TITLE_FONT,
         size=16,
-        color=rgb("alt_row"),
+        color=rgb("subtitle"),
     )
 
     if LOGO_PATH.exists():
@@ -459,8 +477,8 @@ def build_gantt_slide(
             bold=True,
             size=7,
             align=PP_ALIGN.CENTER,
-            fill=rgb("dark_red"),
-            font_color=rgb("white"),
+            fill=rgb("header"),
+            font_color=rgb("header_text"),
         )
         table.cell(0, column_index).merge(table.cell(1, column_index))
 
@@ -477,8 +495,8 @@ def build_gantt_slide(
             bold=True,
             size=7,
             align=PP_ALIGN.CENTER,
-            fill=rgb("dark_burgundy"),
-            font_color=rgb("white"),
+            fill=rgb("year_header"),
+            font_color=rgb("header_text"),
         )
         merge_header_cells(table, 0, start_col, end_col)
         for offset, column in enumerate(span.columns):
@@ -489,8 +507,8 @@ def build_gantt_slide(
                 bold=True,
                 size=6,
                 align=PP_ALIGN.CENTER,
-                fill=rgb("dark_red"),
-                font_color=rgb("white"),
+                fill=rgb("header"),
+                font_color=rgb("header_text"),
             )
 
     for row_index, record in enumerate(group.rows, start=2):
@@ -502,21 +520,29 @@ def build_gantt_slide(
                     font_name=TITLE_FONT,
                     bold=True,
                     size=8,
-                    fill=rgb("title"),
-                    font_color=rgb("white"),
+                    fill=rgb("subsection"),
+                    font_color=rgb("title"),
                 )
             continue
 
         fill = rgb("alt_row") if (row_index - 1) % 2 == 0 else rgb("white")
-        set_cell(table.cell(row_index, 0), record.contour, size=6, fill=fill)
-        set_cell(table.cell(row_index, 1), record.block, size=6, fill=fill, align=PP_ALIGN.CENTER)
-        set_cell(table.cell(row_index, 2), record.task, size=6, fill=fill)
+        set_cell(table.cell(row_index, 0), record.contour, size=6, fill=fill, font_color=rgb("text"))
+        set_cell(
+            table.cell(row_index, 1),
+            record.block,
+            size=6,
+            fill=fill,
+            align=PP_ALIGN.CENTER,
+            font_color=rgb("text"),
+        )
+        set_cell(table.cell(row_index, 2), record.task, size=6, fill=fill, font_color=rgb("text"))
         set_cell(
             table.cell(row_index, 3),
             record.system,
             size=6,
             fill=fill,
             align=PP_ALIGN.CENTER,
+            font_color=rgb("text"),
         )
 
         for column_index, column in enumerate(timeline, start=label_col_count):
@@ -527,8 +553,8 @@ def build_gantt_slide(
                     mark,
                     size=5,
                     align=PP_ALIGN.CENTER,
-                    fill=rgb("brand_red"),
-                    font_color=rgb("white"),
+                    fill=rgb("mark"),
+                    font_color=rgb("mark_text"),
                 )
             else:
                 set_cell(
