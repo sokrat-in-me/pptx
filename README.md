@@ -34,7 +34,7 @@ python generate_presentation.py
 
 ## Стиль и правила оформления
 
-Полные рекомендации Черкизово / MICHURIN: [`.cursor/rules/cherkizovo-presentations.md`](.cursor/rules/cherkizovo-presentations.md)
+Полные рекомендации Черкизово / MICHURIN: [`ai/rules/cherkizovo-presentations.md`](ai/rules/cherkizovo-presentations.md)
 
 ## Стиль из PDF-шаблона
 
