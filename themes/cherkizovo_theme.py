@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-STYLE_GUIDE_PATH = Path(__file__).with_name("cherkizovo-presentations.md")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+STYLE_GUIDE_PATH = _REPO_ROOT / "ai" / "rules" / "cherkizovo-presentations.md"
 
 THEME_NAME = "МИЧУРИН"
-TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "assets" / "MICHURIN.pptx"
+TEMPLATE_PATH = _REPO_ROOT / "assets" / "MICHURIN.pptx"
 
 # Slide format (section 5)
 SLIDE_WIDTH_IN = 13.333
