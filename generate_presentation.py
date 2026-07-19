@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Generate ERP reporting critique presentation from RTR CSV data."""
+"""Generate pilot defects presentation from RTR CSV data using the PDF template."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import re
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,144 +17,52 @@ from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
-SEGMENT_ORDER = [
-    "Выращивание",
-    "Птицепереработка",
-    "Кормопроизводство",
-    "Все сегменты",
-    "Прочее",
-]
-ROWS_PER_SLIDE = 8
+ROWS_PER_SLIDE = 7
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
 
 
 @dataclass(frozen=True)
 class PdfTheme:
-    """Colors and fonts extracted from the PDF template."""
+    """Colors and fonts extracted from the updated PDF template."""
 
     title_font = "Verdana"
-    body_font = "Verdana"
-    page_font = "Calibri"
+    body_font = "Calibri"
 
-    title_rgb = RGBColor(0x1E, 0x20, 0x24)
+    title_rgb = RGBColor(0x83, 0x12, 0x23)
     text_rgb = RGBColor(0x00, 0x00, 0x00)
+    key_rgb = RGBColor(0x77, 0x77, 0x7A)
     accent_rgb = RGBColor(0xFF, 0x00, 0x00)
-    page_number_rgb = RGBColor(0x9A, 0xA0, 0xA6)
-    header_bg_rgb = RGBColor(0xAE, 0x17, 0x2D)
+    header_bg_rgb = RGBColor(0xAF, 0x18, 0x2E)
     header_fg_rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    segment_bg_rgb = RGBColor(0xF0, 0xF0, 0xF0)
+    alt_row_rgb = RGBColor(0xF8, 0xE7, 0xE8)
     white_rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
-    title_size = 20
-    header_size = 8
+    title_size = 18
+    header_size = 12
     body_size = 11
-    segment_size = 8
-    footnote_size = 10
-    page_number_size = 9
 
 
 THEME = PdfTheme()
+COLUMNS = [
+    "№пп",
+    "Ключ",
+    "Задача",
+    "Ценность",
+    "Предварительная\nоценка\nреализации,\nтыс.руб.",
+    "Статус",
+]
+COLUMN_WIDTHS = [
+    Inches(0.45),
+    Inches(0.85),
+    Inches(3.75),
+    Inches(3.55),
+    Inches(1.2),
+    Inches(1.65),
+]
 
 
-def parse_num(value: str) -> float | None:
-    cleaned = re.sub(r"[^0-9.,]", "", value or "").replace(",", ".")
-    if not cleaned:
-        return None
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
-
-
-def is_modification(defect: str) -> bool:
-    return defect in {
-        "Ошибка функциональности",
-        "HotFix-расширение",
-        "Консультация",
-        "Задача",
-        "Дефект интеграции",
-        "Доработка роли",
-        "Замечание к роли",
-        "Ошибка данных миграции",
-    }
-
-
-def is_new_report(defect: str) -> bool:
-    return defect in {"Новое требование", "Разработка", "разработка", "Требование"}
-
-
-def map_segment(row: dict[str, str]) -> str:
-    team = row["team"].lower()
-    desc = row["description"].lower()
-    complexity = row["complexity"].lower()
-
-    if "кормопроизвод" in team:
-        return "Кормопроизводство"
-    if "переработ" in team or any(
-        keyword in desc
-        for keyword in ("убой", "переработ", "гп по sku", "выпущенной продукции")
-    ):
-        return "Птицепереработка"
-    if "птицевод" in team or "выращиван" in desc or "птичник" in desc:
-        return "Выращивание"
-    if "все сегмент" in desc:
-        return "Все сегменты"
-    if "корм" in desc:
-        return "Кормопроизводство"
-    if "индейка" in complexity or "курочка" in complexity:
-        if any(keyword in desc for keyword in ("убой", "себестоим", "переработ", "гп")):
-            return "Птицепереработка"
-        return "Выращивание"
-    if "свинка" in complexity:
-        return "Птицепереработка"
-    return "Прочее"
-
-
-def labor_text(row: dict[str, str]) -> str:
-    analyst = parse_num(row["analyst_hours"])
-    developer = parse_num(row["developer_hours"])
-    parts: list[str] = []
-    if analyst is not None:
-        parts.append(str(int(analyst)) if analyst == int(analyst) else str(analyst))
-    if developer is not None:
-        parts.append(str(int(developer)) if developer == int(developer) else str(developer))
-    if parts:
-        return f"{parts[0]}+{parts[1]} часов" if len(parts) == 2 else f"{parts[0]} часов"
-    return row["cost"]
-
-
-def proposal_text(row: dict[str, str]) -> str:
-    comments = row["comments"].lower()
-    if "отказ" in comments:
-        return "Отказ"
-    if "non-erp" in comments or "non erp" in comments:
-        return "Передать в non-ERP"
-    if "mtd" in comments and "корм" in comments:
-        return "Передать в MTD-Кормопроизводство"
-
-    parts: list[str] = []
-    if "подрядчик" in comments:
-        parts.append("Отдаем в разработку подрядчикам")
-    if row["release"]:
-        parts.append(f"Релиз {row['release']}")
-    if row["blocker"].lower() == "да":
-        parts.append("Блокирует тираж")
-    if row["task_key"]:
-        parts.append(row["task_key"])
-    if row["team"].startswith("MTD"):
-        parts.append(row["team"])
-    if row["comments"] and len(row["comments"]) < 120:
-        parts.append(row["comments"])
-    return "; ".join(dict.fromkeys(parts)) or "В работе"
-
-
-def proposal_is_accent(text: str) -> bool:
-    lowered = text.lower()
-    return lowered.startswith("уточнить") or "важно" in lowered
-
-
-def load_csv(path: Path) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
+def load_csv(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8-sig") as handle:
         rows = list(csv.reader(handle))
 
@@ -167,49 +75,103 @@ def load_csv(path: Path) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
             return default
         return (row[position] or "").strip()
 
-    release_info = []
-    for row in rows[1:5]:
-        release = row[8].strip() if len(row) > 8 else ""
-        deadline = row[9].strip() if len(row) > 9 else ""
-        if release:
-            release_info.append((release, deadline))
-
     records: list[dict[str, str]] = []
     for row in rows[6:]:
         team = get(row, "Команда")
         if not team:
             continue
-
-        description = get(row, "Описание задачи (текстовое поле)")
-        project_solution = get(row, "Проектное решение")
-        if not (
-            "отчет" in description.lower()
-            or "отчёт" in description.lower()
-            or "Отчетность" in project_solution
-            or "отчет" in project_solution.lower()
-        ):
-            continue
-
         records.append(
             {
                 "team": team,
                 "defect": get(row, "Дефект"),
                 "task_key": get(row, "Ключ задач в ЯТ (ссылка)"),
-                "description": description,
-                "complexity": get(row, "Сложность"),
+                "description": get(row, "Описание задачи (текстовое поле)"),
+                "priority": get(row, "Приоритет"),
                 "release": get(row, "Релиз"),
-                "blocker": get(row, "Блокирует старт тиража? (Да/Нет)"),
+                "chtz_status": get(row, "Статус ЧТЗ"),
+                "development": get(row, "Разработка"),
                 "comments": get(row, "Корректировки/комментарии") or get(row, "Комментарии"),
-                "analyst_hours": get(row, "Оценака аналитики, ч"),
-                "developer_hours": get(row, "Оценка разработки, ч"),
                 "cost": get(row, "Стоимость разработки, тыс.руб."),
+                "value": get(row, "value"),
+                "ppk_critical": get(row, "критичны к запуску ППК"),
             }
         )
+    return records
 
-    return release_info, records
+
+def is_critical(record: dict[str, str]) -> bool:
+    priority = record["priority"].lower()
+    ppk = record["ppk_critical"].lower()
+    comments = record["comments"].lower()
+    return (
+        "критич" in priority
+        or "критич" in ppk
+        or "критич" in comments
+        or "важно" in comments
+    )
 
 
-def set_cell_border(cell, *, color: str = "000000", width: str = "12700") -> None:
+def value_text(record: dict[str, str]) -> str:
+    if record["value"]:
+        return record["value"]
+    comments = record["comments"]
+    if comments and len(comments) > 35 and not comments.lower().startswith("ок"):
+        return comments
+    return ""
+
+
+def status_text(record: dict[str, str]) -> str:
+    development = record["development"]
+    release = record["release"]
+    chtz_status = record["chtz_status"]
+    comments = record["comments"]
+    analyst = record.get("analyst", "")
+
+    lowered = development.lower()
+    if "беринг" in lowered:
+        if any(word in lowered for word in ("разработ", "код", "dev")):
+            return "в разработке у БерингПро"
+        return "на оценке у БерингПро"
+    if "базис" in lowered:
+        return "в разработке у Базис"
+    if "1с-перспектива" in lowered or "перспектив" in lowered:
+        return "на оценке у 1С-Перспектива"
+    if development:
+        return development
+
+    parts: list[str] = []
+    if chtz_status:
+        parts.append(chtz_status)
+    if release:
+        parts.append(f"{release} релиз")
+    if comments and len(comments) <= 50 and "критич" not in comments.lower():
+        parts.append(comments)
+    if parts:
+        return ", ".join(parts)
+    return "в работе"
+
+
+def task_parts(record: dict[str, str]) -> list[tuple[str, bool]]:
+    defect = record["defect"] or "Задача"
+    key = record["task_key"] or "—"
+    description = record["description"]
+    text = f"{key}: {defect} - {description}"
+    parts: list[tuple[str, bool]] = [(text, False)]
+
+    lowered = f"{description} {record['comments']}".lower()
+    if "упп" in lowered or "реализован" in lowered:
+        parts.append((" – реализовано в УПП", True))
+    return parts
+
+
+def cost_text(record: dict[str, str]) -> str:
+    cost = record["cost"]
+    if cost in {"", "0", "#N/A"}:
+        return ""
+    return cost
+
+
+def set_cell_border(cell, *, color: str = "000000", width: str = "6350") -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     for edge in ("lnL", "lnR", "lnT", "lnB"):
         tag = qn(f"a:{edge}")
@@ -244,13 +206,11 @@ def set_run_font(
     font_name: str,
     size: int,
     bold: bool = False,
-    italic: bool = False,
     color: RGBColor | None = None,
 ) -> None:
     run.font.name = font_name
     run.font.size = Pt(size)
     run.font.bold = bold
-    run.font.italic = italic
     if color is not None:
         run.font.color.rgb = color
 
@@ -262,7 +222,6 @@ def set_textbox(
     font_name: str,
     size: int,
     bold: bool = False,
-    italic: bool = False,
     color: RGBColor | None = None,
     align: PP_ALIGN = PP_ALIGN.LEFT,
 ) -> None:
@@ -276,9 +235,41 @@ def set_textbox(
         font_name=font_name,
         size=size,
         bold=bold,
-        italic=italic,
         color=color or THEME.text_rgb,
     )
+
+
+def set_cell_runs(
+    cell,
+    runs: list[tuple[str, bool, RGBColor | None]],
+    *,
+    size: int = THEME.body_size,
+    align=PP_ALIGN.LEFT,
+    fill: RGBColor | None = None,
+) -> None:
+    cell.text = ""
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cell.margin_left = Pt(4)
+    cell.margin_right = Pt(4)
+    cell.margin_top = Pt(2)
+    cell.margin_bottom = Pt(2)
+    paragraph = cell.text_frame.paragraphs[0]
+    paragraph.alignment = align
+    for text, bold, color in runs:
+        if not text:
+            continue
+        run = paragraph.add_run()
+        run.text = text
+        set_run_font(
+            run,
+            font_name=THEME.body_font,
+            size=size,
+            bold=bold,
+            color=color or THEME.text_rgb,
+        )
+    if fill is not None:
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = fill
 
 
 def set_cell(
@@ -292,43 +283,28 @@ def set_cell(
     fill: RGBColor | None = None,
     font_color: RGBColor | None = None,
 ) -> None:
-    cell.text = str(text)
-    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-    cell.margin_left = Pt(4)
-    cell.margin_right = Pt(4)
-    cell.margin_top = Pt(2)
-    cell.margin_bottom = Pt(2)
-    for paragraph in cell.text_frame.paragraphs:
-        paragraph.alignment = align
-        for run in paragraph.runs:
-            set_run_font(
-                run,
-                font_name=font_name,
-                size=size,
-                bold=bold,
-                color=font_color or THEME.text_rgb,
-            )
-    if fill is not None:
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = fill
+    set_cell_runs(
+        cell,
+        [(str(text), bold, font_color)],
+        size=size,
+        align=align,
+        fill=fill,
+    )
+    for run in cell.text_frame.paragraphs[0].runs:
+        run.font.name = font_name
 
 
 def add_logo(slide) -> None:
     if not LOGO_PATH.exists():
         return
-    slide.shapes.add_picture(
-        str(LOGO_PATH),
-        Inches(10.55),
-        Inches(0.12),
-        width=Inches(2.35),
-    )
+    slide.shapes.add_picture(str(LOGO_PATH), Inches(10.55), Inches(0.08), width=Inches(2.35))
 
 
-def add_slide_title(slide, title: str) -> None:
-    title_box = slide.shapes.add_textbox(Inches(0.35), Inches(0.12), Inches(9.8), Inches(0.7))
+def add_slide_title(slide, page_index: int, total_pages: int) -> None:
+    title_box = slide.shapes.add_textbox(Inches(0.35), Inches(0.12), Inches(9.5), Inches(0.55))
     set_textbox(
         title_box.text_frame,
-        title,
+        f"Дефекты и разработки по Пилоту ({page_index}/{total_pages})",
         font_name=THEME.title_font,
         size=THEME.title_size,
         bold=True,
@@ -336,125 +312,37 @@ def add_slide_title(slide, title: str) -> None:
     )
 
 
-def add_page_number(slide, number: int) -> None:
-    number_box = slide.shapes.add_textbox(Inches(12.45), Inches(7.0), Inches(0.55), Inches(0.3))
-    set_textbox(
-        number_box.text_frame,
-        str(number),
-        font_name=THEME.page_font,
-        size=THEME.page_number_size,
-        color=THEME.page_number_rgb,
-        align=PP_ALIGN.RIGHT,
-    )
-
-
-def add_footnotes(slide) -> None:
-    notes = slide.shapes.add_textbox(Inches(0.35), Inches(6.95), Inches(10.5), Inches(0.35))
-    set_textbox(
-        notes.text_frame,
-        "*  оценка по Пилоту\n** трудозатраты: аналитик + разработчик",
-        font_name=THEME.body_font,
-        size=THEME.footnote_size,
-        color=THEME.text_rgb,
-    )
-
-
-def build_presentation(
-    release_info: list[tuple[str, str]],
-    records: list[dict[str, str]],
-    output_path: Path,
-) -> None:
-    by_segment: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for record in records:
-        by_segment[map_segment(record)].append(record)
-
-    ordered_segments = [segment for segment in SEGMENT_ORDER if segment in by_segment]
-    for segment in sorted(by_segment):
-        if segment not in ordered_segments:
-            ordered_segments.append(segment)
-
-    flat_records: list[dict[str, str]] = []
-    for segment in ordered_segments:
-        flat_records.extend(by_segment[segment])
+def build_presentation(records: list[dict[str, str]], output_path: Path) -> None:
+    total_pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
 
-    title_slide = prs.slides.add_slide(blank)
-    add_logo(title_slide)
-    title_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(2.0), Inches(8.5), Inches(1.0))
-    set_textbox(
-        title_box.text_frame,
-        "Критика отчетности ERP\nпо сегментам",
-        font_name=THEME.title_font,
-        size=THEME.title_size,
-        bold=True,
-        color=THEME.title_rgb,
-    )
-
-    subtitle_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(3.2), Inches(9.0), Inches(0.5))
-    set_textbox(
-        subtitle_box.text_frame,
-        "Статус пилота и план доработок (данные на 14.07)",
-        font_name=THEME.body_font,
-        size=THEME.body_size,
-        color=THEME.text_rgb,
-    )
-
-    if release_info:
-        release_box = title_slide.shapes.add_textbox(Inches(0.35), Inches(4.0), Inches(8.5), Inches(1.8))
-        release_frame = release_box.text_frame
-        release_frame.clear()
-        for index, (release, deadline) in enumerate(release_info):
-            paragraph = release_frame.paragraphs[0] if index == 0 else release_frame.add_paragraph()
-            paragraph.alignment = PP_ALIGN.LEFT
-            run = paragraph.add_run()
-            run.text = (
-                f"{release}: дедлайн согласования ЧТЗ — {deadline}" if deadline else release
-            )
-            set_run_font(
-                run,
-                font_name=THEME.body_font,
-                size=THEME.body_size,
-                color=THEME.text_rgb,
-            )
-
-    columns = [
-        "Сегмент",
-        "Доработка\nотчета",
-        "Новый\nотчет",
-        "Описание",
-        "Трудоемкость\n, ЧЧ/мес*",
-        "Предложение",
-    ]
-    widths = [Inches(1.35), Inches(0.75), Inches(0.75), Inches(5.2), Inches(1.15), Inches(3.45)]
-
-    slide_number = 1
-    for chunk_start in range(0, len(flat_records), ROWS_PER_SLIDE):
-        chunk = flat_records[chunk_start : chunk_start + ROWS_PER_SLIDE]
+    for page_index, chunk_start in enumerate(range(0, len(records), ROWS_PER_SLIDE), start=1):
+        chunk = records[chunk_start : chunk_start + ROWS_PER_SLIDE]
         slide = prs.slides.add_slide(blank)
         add_logo(slide)
-        add_slide_title(slide, "Критика отчетности ERP по сегментам")
+        add_slide_title(slide, page_index, total_pages)
 
         table_shape = slide.shapes.add_table(
             len(chunk) + 1,
-            len(columns),
+            len(COLUMNS),
             Inches(0.35),
-            Inches(0.85),
-            sum(widths),
-            Inches(5.85),
+            Inches(0.75),
+            sum(COLUMN_WIDTHS),
+            Inches(6.35),
         )
         table = table_shape.table
-        for index, width in enumerate(widths):
+        for index, width in enumerate(COLUMN_WIDTHS):
             table.columns[index].width = width
 
-        for column_index, title in enumerate(columns):
+        for column_index, title in enumerate(COLUMNS):
             set_cell(
                 table.cell(0, column_index),
                 title,
-                font_name=THEME.title_font,
+                font_name=THEME.body_font,
                 bold=True,
                 size=THEME.header_size,
                 align=PP_ALIGN.CENTER,
@@ -463,100 +351,56 @@ def build_presentation(
             )
 
         for row_index, record in enumerate(chunk, start=1):
-            description = record["description"]
-            if len(description) > 260:
-                description = description[:257] + "..."
-            proposal = proposal_text(record)
-            values = [
-                (map_segment(record), 0, True, False, THEME.segment_bg_rgb, THEME.text_rgb),
-                ("V" if is_modification(record["defect"]) else "", 1, True, False, THEME.white_rgb, THEME.text_rgb),
-                ("V" if is_new_report(record["defect"]) else "", 2, True, False, THEME.white_rgb, THEME.text_rgb),
-                (description, 3, False, False, THEME.white_rgb, THEME.text_rgb),
-                (labor_text(record), 4, True, False, THEME.white_rgb, THEME.text_rgb),
-                (
-                    proposal,
-                    5,
-                    False,
-                    proposal_is_accent(proposal),
-                    THEME.white_rgb,
-                    THEME.accent_rgb if proposal_is_accent(proposal) else THEME.text_rgb,
-                ),
-            ]
-            for value, column_index, bold, _, fill, color in values:
-                set_cell(
-                    table.cell(row_index, column_index),
-                    value,
-                    font_name=THEME.title_font if column_index == 0 else THEME.body_font,
-                    size=THEME.segment_size if column_index == 0 else THEME.body_size,
-                    bold=bold,
-                    align=PP_ALIGN.CENTER if column_index in (1, 2, 4) else PP_ALIGN.LEFT,
-                    fill=fill,
-                    font_color=color,
-                )
+            row_number = chunk_start + row_index
+            fill = THEME.alt_row_rgb if row_index % 2 == 0 else THEME.white_rgb
+            critical = is_critical(record)
+            accent = THEME.accent_rgb if critical else THEME.text_rgb
 
-        style_table_borders(table)
-        add_footnotes(slide)
-        add_page_number(slide, slide_number)
-        slide_number += 1
-
-    summary_slide = prs.slides.add_slide(blank)
-    add_logo(summary_slide)
-    add_slide_title(summary_slide, "Сводка по сегментам")
-
-    summary_columns = [
-        "Сегмент",
-        "Кол-во задач",
-        "Доработка",
-        "Новый отчет",
-        "Часы (аналитика+разработка)",
-    ]
-    summary_widths = [Inches(2.5), Inches(1.5), Inches(1.5), Inches(1.5), Inches(3.5)]
-    summary_table = summary_slide.shapes.add_table(
-        len(ordered_segments) + 1,
-        len(summary_columns),
-        Inches(1.5),
-        Inches(1.2),
-        sum(summary_widths),
-        Inches(3.5),
-    ).table
-    for index, width in enumerate(summary_widths):
-        summary_table.columns[index].width = width
-
-    for column_index, title in enumerate(summary_columns):
-        set_cell(
-            summary_table.cell(0, column_index),
-            title,
-            font_name=THEME.title_font,
-            bold=True,
-            size=THEME.header_size,
-            align=PP_ALIGN.CENTER,
-            fill=THEME.header_bg_rgb,
-            font_color=THEME.header_fg_rgb,
-        )
-
-    for row_index, segment in enumerate(ordered_segments, start=1):
-        items = by_segment[segment]
-        modifications = sum(1 for item in items if is_modification(item["defect"]))
-        new_reports = sum(1 for item in items if is_new_report(item["defect"]))
-        hours = sum(
-            (parse_num(item["analyst_hours"]) or 0) + (parse_num(item["developer_hours"]) or 0)
-            for item in items
-        )
-        values = [segment, len(items), modifications, new_reports, int(hours)]
-        for column_index, value in enumerate(values):
-            fill = THEME.segment_bg_rgb if column_index == 0 else THEME.white_rgb
             set_cell(
-                summary_table.cell(row_index, column_index),
-                value,
-                font_name=THEME.title_font if column_index == 0 else THEME.body_font,
-                size=THEME.segment_size if column_index == 0 else THEME.body_size,
-                bold=column_index == 0,
+                table.cell(row_index, 0),
+                str(row_number),
+                size=THEME.body_size,
                 align=PP_ALIGN.CENTER,
                 fill=fill,
             )
+            set_cell(
+                table.cell(row_index, 1),
+                record["task_key"] or "—",
+                size=THEME.body_size,
+                fill=fill,
+                font_color=THEME.key_rgb,
+            )
 
-    style_table_borders(summary_table)
-    add_page_number(summary_slide, slide_number)
+            task_runs = [(text, bold, THEME.text_rgb) for text, bold in task_parts(record)]
+            set_cell_runs(table.cell(row_index, 2), task_runs, fill=fill)
+
+            value = value_text(record)
+            if len(value) > 320:
+                value = value[:317] + "..."
+            set_cell(table.cell(row_index, 3), value, fill=fill)
+
+            set_cell(
+                table.cell(row_index, 4),
+                cost_text(record),
+                bold=critical and bool(cost_text(record)),
+                align=PP_ALIGN.CENTER,
+                fill=fill,
+                font_color=accent if critical and cost_text(record) else THEME.text_rgb,
+            )
+
+            status = status_text(record)
+            status_runs: list[tuple[str, bool, RGBColor | None]] = [(status, False, THEME.text_rgb)]
+            if critical:
+                status_runs.append(("\nКритичная!", True, THEME.accent_rgb))
+            set_cell_runs(
+                table.cell(row_index, 5),
+                status_runs,
+                align=PP_ALIGN.LEFT,
+                fill=fill,
+            )
+
+        style_table_borders(table)
+
     prs.save(output_path)
 
 
@@ -571,14 +415,15 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("Критика_отчетности_ERP_по_сегментам.pptx"),
+        default=Path("Дефекты_и_разработки_по_Пилоту.pptx"),
         help="Path to generated presentation",
     )
     args = parser.parse_args()
 
-    release_info, records = load_csv(args.csv)
-    build_presentation(release_info, records, args.output)
-    print(f"Created {args.output} with {len(records)} reporting tasks")
+    records = load_csv(args.csv)
+    build_presentation(records, args.output)
+    pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
+    print(f"Created {args.output} with {len(records)} tasks across {pages} slides")
 
 
 if __name__ == "__main__":
