@@ -25,6 +25,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from themes.cherkizovo import (  # noqa: E402
+    CHARS_PER_INCH,
     COLORS,
     LOGO_LEFT_IN,
     LOGO_TOP_IN,
@@ -33,6 +34,7 @@ from themes.cherkizovo import (  # noqa: E402
     SLIDE_HEIGHT_IN,
     SLIDE_WIDTH_IN,
     TABLE_LEFT_IN,
+    TABLE_TOP_IN,
     TABLE_WIDTH_IN,
     TITLE_FONT,
     TITLE_LEFT_IN,
@@ -66,10 +68,13 @@ LABEL_COLUMNS = [
 
 EXCLUDED_TIMELINE = {("2026", "May"), ("2026", "Jun")}
 
-MAX_GANTT_SLIDES = 2
-TABLE_TOP_IN = 1.05
 YEAR_HEADER_HEIGHT_IN = 0.28
 MONTH_HEADER_HEIGHT_IN = 0.28
+GANTT_HEADER_HEIGHT_IN = YEAR_HEADER_HEIGHT_IN + MONTH_HEADER_HEIGHT_IN
+MAX_DATA_HEIGHT_IN = SLIDE_HEIGHT_IN - TABLE_TOP_IN - SIDE_MARGIN_IN - GANTT_HEADER_HEIGHT_IN
+TASK_COL_WIDTH_IN = LABEL_COLUMNS[0][1]
+GANTT_BODY_SIZE = 6
+GANTT_LINE_HEIGHT_IN = GANTT_BODY_SIZE / 72 * 1.15
 MIN_ROW_HEIGHT_IN = 0.2
 
 # Светлая палитра для диаграммы Ганта (на базе корпоративных оттенков МИЧУРИН)
@@ -230,18 +235,66 @@ def flatten_display_rows(records: list[ScheduleRow]) -> list[ScheduleRow]:
     return display_rows
 
 
-def group_slides(records: list[ScheduleRow]) -> list[SlideGroup]:
+def wrapped_lines(text: str, column_width_in: float, *, chars_per_inch: float = CHARS_PER_INCH) -> int:
+    if not text:
+        return 1
+    chars_per_line = max(1, int(column_width_in * chars_per_inch))
+    return max(1, math.ceil(len(text) / chars_per_line))
+
+
+def month_column_width(timeline_count: int) -> float:
+    label_widths = [width for _, width in LABEL_COLUMNS]
+    return (TABLE_WIDTH_IN - sum(label_widths)) / max(1, timeline_count)
+
+
+def estimate_row_height(record: ScheduleRow, *, timeline_count: int) -> float:
+    if record.kind == "subsection":
+        return 0.24
+
+    month_width = month_column_width(timeline_count)
+    task_lines = wrapped_lines(task_display_text(record), TASK_COL_WIDTH_IN)
+    mark_lines = max(
+        (wrapped_lines(mark, month_width) for mark in record.marks.values()),
+        default=1,
+    )
+    lines = max(task_lines, mark_lines)
+    return max(MIN_ROW_HEIGHT_IN, lines * GANTT_LINE_HEIGHT_IN + 0.06)
+
+
+def group_slides(
+    records: list[ScheduleRow],
+    *,
+    timeline_count: int,
+) -> list[SlideGroup]:
     display_rows = flatten_display_rows(records)
     if not display_rows:
         return []
 
-    chunk_size = math.ceil(len(display_rows) / MAX_GANTT_SLIDES)
-    groups: list[SlideGroup] = []
-    for index in range(0, len(display_rows), chunk_size):
-        chunk = display_rows[index : index + chunk_size]
-        page = len(groups) + 1
-        groups.append(SlideGroup(title=f"График запуска ({page}/{MAX_GANTT_SLIDES})", rows=chunk))
-    return groups[:MAX_GANTT_SLIDES]
+    groups: list[list[ScheduleRow]] = []
+    current_rows: list[ScheduleRow] = []
+    current_height = 0.0
+
+    for record in display_rows:
+        row_height = estimate_row_height(record, timeline_count=timeline_count)
+        if current_rows and current_height + row_height > MAX_DATA_HEIGHT_IN:
+            groups.append(current_rows)
+            current_rows = []
+            current_height = 0.0
+
+        current_rows.append(record)
+        current_height += row_height
+
+    if current_rows:
+        groups.append(current_rows)
+
+    total_pages = len(groups)
+    return [
+        SlideGroup(
+            title=f"График запуска ({page}/{total_pages})",
+            rows=chunk,
+        )
+        for page, chunk in enumerate(groups, start=1)
+    ]
 
 
 def set_cell_border(cell, *, color: str = "E8C4C8", width: str = "6350") -> None:
@@ -360,17 +413,6 @@ def set_textbox(
     )
 
 
-def estimate_row_height(record: ScheduleRow) -> float:
-    if record.kind == "subsection":
-        return 0.24
-    text_len = max(len(record.task), max((len(value) for value in record.marks.values()), default=0))
-    if text_len > 80:
-        return 0.34
-    if text_len > 45:
-        return 0.28
-    return MIN_ROW_HEIGHT_IN
-
-
 def merge_header_cells(table, row_index: int, start_col: int, end_col: int) -> None:
     if end_col <= start_col:
         return
@@ -410,7 +452,10 @@ def build_gantt_slide(
         Inches(month_width) for _ in timeline
     ]
 
-    row_heights = [estimate_row_height(record) for record in group.rows]
+    row_heights = [
+        estimate_row_height(record, timeline_count=len(timeline))
+        for record in group.rows
+    ]
     header_height = YEAR_HEADER_HEIGHT_IN + MONTH_HEADER_HEIGHT_IN
     table_height = Inches(header_height + sum(row_heights))
 
@@ -535,7 +580,7 @@ def build_presentation(
     records: list[ScheduleRow],
     output_path: Path,
 ) -> int:
-    groups = group_slides(records)
+    groups = group_slides(records, timeline_count=len(timeline))
     year_spans = build_year_spans(timeline)
     total_pages = len(groups)
 
