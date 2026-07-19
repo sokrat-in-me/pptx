@@ -136,28 +136,57 @@ class SlideGroup:
     rows: list[ScheduleRow]
 
 
+def _strip_empty_columns(rows: list[list[str]]) -> list[list[str]]:
+    if not rows:
+        return rows
+    max_cols = max(len(row) for row in rows)
+    for row in rows:
+        while len(row) < max_cols:
+            row.append("")
+    keep = [
+        column_index
+        for column_index in range(max_cols)
+        if any(row[column_index].strip() for row in rows)
+    ]
+    return [[row[column_index] for column_index in keep] for row in rows]
+
+
+def _find_system_column(rows: list[list[str]], first_timeline_index: int) -> int:
+    for index in range(3, first_timeline_index):
+        if any(
+            rows[row_index][index].strip()
+            for row_index in range(3, min(len(rows), 25))
+            if index < len(rows[row_index])
+        ):
+            return index
+    return 3
+
+
 def load_schedule(path: Path) -> tuple[list[TimelineColumn], list[ScheduleRow]]:
     with path.open(encoding="utf-8-sig") as handle:
-        rows = list(csv.reader(handle))
+        rows = _strip_empty_columns(list(csv.reader(handle)))
 
     years = rows[1]
     months = rows[2]
     timeline: list[TimelineColumn] = []
-    for index in range(8, len(months)):
+    for index in range(len(months)):
         year = years[index].strip() if index < len(years) else ""
         month = months[index].strip() if index < len(months) else ""
-        if not year and not month:
+        if not year or not month:
             continue
         if (year, month) in EXCLUDED_TIMELINE:
             continue
         timeline.append(TimelineColumn(index=index, year=year, month=month))
+
+    first_timeline_index = timeline[0].index if timeline else len(months)
+    system_column = _find_system_column(rows, first_timeline_index)
 
     records: list[ScheduleRow] = []
     for row in rows[3:]:
         contour = row[0].strip() if len(row) > 0 else ""
         block = row[1].strip() if len(row) > 1 else ""
         task = row[2].strip() if len(row) > 2 else ""
-        system = row[6].strip() if len(row) > 6 else ""
+        system = row[system_column].strip() if len(row) > system_column else ""
 
         if not any((contour, block, task, system)):
             continue
