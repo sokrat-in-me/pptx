@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,17 +60,17 @@ MONTH_LABELS = {
 }
 
 LABEL_COLUMNS = [
-    ("Контур", 0.9),
-    ("Блок", 0.55),
-    ("Задача / направление", 2.8),
-    ("Сист.", 0.45),
+    ("Контур", 0.75),
+    ("Блок", 0.45),
+    ("Задача / направление", 2.35),
+    ("Сист.", 0.4),
 ]
 
-MAX_ROWS_PER_SLIDE = 9
-TABLE_TOP_IN = 1.127
-HEADER_ROW_HEIGHT_IN = 0.55
-MIN_ROW_HEIGHT_IN = 0.42
-SLIDE_TITLE_TEMPLATE = "График запуска ({page}/{total})"
+MAX_GANTT_SLIDES = 2
+TABLE_TOP_IN = 1.05
+YEAR_HEADER_HEIGHT_IN = 0.28
+MONTH_HEADER_HEIGHT_IN = 0.28
+MIN_ROW_HEIGHT_IN = 0.2
 
 
 def rgb(name: str) -> RGBColor:
@@ -103,6 +104,12 @@ class ScheduleRow:
     system: str = ""
     marks: dict[str, str] = field(default_factory=dict)
     owner: str = ""
+
+
+@dataclass
+class YearSpan:
+    year: str
+    columns: list[TimelineColumn] = field(default_factory=list)
 
 
 @dataclass
@@ -173,34 +180,39 @@ def load_schedule(path: Path) -> tuple[list[TimelineColumn], list[ScheduleRow]]:
     return timeline, records
 
 
-def group_slides(records: list[ScheduleRow]) -> list[SlideGroup]:
-    groups: list[SlideGroup] = []
-    current_title = "Общий график"
-    current_rows: list[ScheduleRow] = []
+def build_year_spans(timeline: list[TimelineColumn]) -> list[YearSpan]:
+    spans: list[YearSpan] = []
+    for column in timeline:
+        if spans and spans[-1].year == column.year:
+            spans[-1].columns.append(column)
+        else:
+            spans.append(YearSpan(year=column.year, columns=[column]))
+    return spans
 
-    def flush() -> None:
-        nonlocal current_rows
-        if not current_rows:
-            return
-        for start in range(0, len(current_rows), MAX_ROWS_PER_SLIDE):
-            chunk = current_rows[start : start + MAX_ROWS_PER_SLIDE]
-            suffix = ""
-            total_chunks = (len(current_rows) + MAX_ROWS_PER_SLIDE - 1) // MAX_ROWS_PER_SLIDE
-            if total_chunks > 1:
-                chunk_index = start // MAX_ROWS_PER_SLIDE + 1
-                suffix = f" — {chunk_index}/{total_chunks}"
-            groups.append(SlideGroup(title=f"{current_title}{suffix}", rows=chunk))
-        current_rows = []
 
+def flatten_display_rows(records: list[ScheduleRow]) -> list[ScheduleRow]:
+    """Convert section headers into inline subsection rows for a compact table."""
+    display_rows: list[ScheduleRow] = []
     for record in records:
         if record.kind == "section":
-            flush()
-            current_title = record.task
-            continue
-        current_rows.append(record)
+            display_rows.append(ScheduleRow(kind="subsection", task=record.task))
+        else:
+            display_rows.append(record)
+    return display_rows
 
-    flush()
-    return groups
+
+def group_slides(records: list[ScheduleRow]) -> list[SlideGroup]:
+    display_rows = flatten_display_rows(records)
+    if not display_rows:
+        return []
+
+    chunk_size = math.ceil(len(display_rows) / MAX_GANTT_SLIDES)
+    groups: list[SlideGroup] = []
+    for index in range(0, len(display_rows), chunk_size):
+        chunk = display_rows[index : index + chunk_size]
+        page = len(groups) + 1
+        groups.append(SlideGroup(title=f"График запуска ({page}/{MAX_GANTT_SLIDES})", rows=chunk))
+    return groups[:MAX_GANTT_SLIDES]
 
 
 def set_cell_border(cell, *, color: str = "000000", width: str = "6350") -> None:
@@ -365,14 +377,20 @@ def add_title_slide(prs: Presentation) -> None:
 
 
 def estimate_row_height(record: ScheduleRow) -> float:
-    if record.kind in {"section", "subsection"}:
-        return 0.35
+    if record.kind == "subsection":
+        return 0.24
     text_len = max(len(record.task), max((len(value) for value in record.marks.values()), default=0))
-    if text_len > 60:
-        return 0.62
-    if text_len > 30:
-        return 0.5
+    if text_len > 80:
+        return 0.34
+    if text_len > 45:
+        return 0.28
     return MIN_ROW_HEIGHT_IN
+
+
+def merge_header_cells(table, row_index: int, start_col: int, end_col: int) -> None:
+    if end_col <= start_col:
+        return
+    table.cell(row_index, start_col).merge(table.cell(row_index, end_col))
 
 
 def build_gantt_slide(
@@ -380,6 +398,7 @@ def build_gantt_slide(
     *,
     group: SlideGroup,
     timeline: list[TimelineColumn],
+    year_spans: list[YearSpan],
     page_index: int,
     total_pages: int,
 ) -> None:
@@ -408,10 +427,11 @@ def build_gantt_slide(
     ]
 
     row_heights = [estimate_row_height(record) for record in group.rows]
-    table_height = Inches(HEADER_ROW_HEIGHT_IN + sum(row_heights))
+    header_height = YEAR_HEADER_HEIGHT_IN + MONTH_HEADER_HEIGHT_IN
+    table_height = Inches(header_height + sum(row_heights))
 
     table_shape = slide.shapes.add_table(
-        len(group.rows) + 1,
+        len(group.rows) + 2,
         len(LABEL_COLUMNS) + len(timeline),
         Inches(TABLE_LEFT_IN),
         Inches(TABLE_TOP_IN),
@@ -423,9 +443,13 @@ def build_gantt_slide(
     for index, width in enumerate(column_widths):
         table.columns[index].width = width
 
-    table.rows[0].height = Inches(HEADER_ROW_HEIGHT_IN)
-    for row_index, row_height in enumerate(row_heights, start=1):
+    table.rows[0].height = Inches(YEAR_HEADER_HEIGHT_IN)
+    table.rows[1].height = Inches(MONTH_HEADER_HEIGHT_IN)
+    for row_index, row_height in enumerate(row_heights, start=2):
         table.rows[row_index].height = Inches(row_height)
+
+    label_col_count = len(LABEL_COLUMNS)
+    timeline_col_count = len(timeline)
 
     for column_index, (title, _) in enumerate(LABEL_COLUMNS):
         set_cell(
@@ -433,57 +457,75 @@ def build_gantt_slide(
             title,
             font_name="Calibri",
             bold=True,
-            size=9,
-            align=PP_ALIGN.CENTER,
-            fill=rgb("dark_red"),
-            font_color=rgb("white"),
-        )
-
-    for column_index, column in enumerate(timeline, start=len(LABEL_COLUMNS)):
-        set_cell(
-            table.cell(0, column_index),
-            column.label,
-            font_name="Calibri",
-            bold=True,
             size=7,
             align=PP_ALIGN.CENTER,
             fill=rgb("dark_red"),
             font_color=rgb("white"),
         )
+        table.cell(0, column_index).merge(table.cell(1, column_index))
 
-    for row_index, record in enumerate(group.rows, start=1):
+    timeline_start = label_col_count
+    for span in year_spans:
+        start_col = timeline_start + sum(
+            len(previous.columns) for previous in year_spans[: year_spans.index(span)]
+        )
+        end_col = start_col + len(span.columns) - 1
+        set_cell(
+            table.cell(0, start_col),
+            span.year,
+            font_name="Calibri",
+            bold=True,
+            size=7,
+            align=PP_ALIGN.CENTER,
+            fill=rgb("dark_burgundy"),
+            font_color=rgb("white"),
+        )
+        merge_header_cells(table, 0, start_col, end_col)
+        for offset, column in enumerate(span.columns):
+            set_cell(
+                table.cell(1, start_col + offset),
+                column.label,
+                font_name="Calibri",
+                bold=True,
+                size=6,
+                align=PP_ALIGN.CENTER,
+                fill=rgb("dark_red"),
+                font_color=rgb("white"),
+            )
+
+    for row_index, record in enumerate(group.rows, start=2):
         if record.kind == "subsection":
-            for column_index in range(len(LABEL_COLUMNS) + len(timeline)):
+            for column_index in range(label_col_count + timeline_col_count):
                 set_cell(
                     table.cell(row_index, column_index),
                     record.task if column_index == 2 else "",
                     font_name=TITLE_FONT,
                     bold=True,
-                    size=10,
+                    size=8,
                     fill=rgb("title"),
                     font_color=rgb("white"),
                 )
             continue
 
-        fill = rgb("alt_row") if row_index % 2 == 0 else rgb("white")
-        set_cell(table.cell(row_index, 0), record.contour, size=8, fill=fill)
-        set_cell(table.cell(row_index, 1), record.block, size=8, fill=fill, align=PP_ALIGN.CENTER)
-        set_cell(table.cell(row_index, 2), record.task, size=8, fill=fill)
+        fill = rgb("alt_row") if (row_index - 1) % 2 == 0 else rgb("white")
+        set_cell(table.cell(row_index, 0), record.contour, size=6, fill=fill)
+        set_cell(table.cell(row_index, 1), record.block, size=6, fill=fill, align=PP_ALIGN.CENTER)
+        set_cell(table.cell(row_index, 2), record.task, size=6, fill=fill)
         set_cell(
             table.cell(row_index, 3),
             record.system,
-            size=8,
+            size=6,
             fill=fill,
             align=PP_ALIGN.CENTER,
         )
 
-        for column_index, column in enumerate(timeline, start=len(LABEL_COLUMNS)):
+        for column_index, column in enumerate(timeline, start=label_col_count):
             mark = record.marks.get(column.key, "")
             if mark:
                 set_cell(
                     table.cell(row_index, column_index),
                     mark,
-                    size=6,
+                    size=5,
                     align=PP_ALIGN.CENTER,
                     fill=rgb("brand_red"),
                     font_color=rgb("white"),
@@ -492,7 +534,7 @@ def build_gantt_slide(
                 set_cell(
                     table.cell(row_index, column_index),
                     "",
-                    size=6,
+                    size=5,
                     fill=fill,
                 )
 
@@ -505,6 +547,7 @@ def build_presentation(
     output_path: Path,
 ) -> int:
     groups = group_slides(records)
+    year_spans = build_year_spans(timeline)
     total_pages = len(groups)
 
     prs = Presentation()
@@ -519,6 +562,7 @@ def build_presentation(
             prs,
             group=group,
             timeline=timeline,
+            year_spans=year_spans,
             page_index=page_index,
             total_pages=total_pages,
         )
