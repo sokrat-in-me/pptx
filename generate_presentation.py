@@ -416,6 +416,7 @@ def set_key_cell(cell, task_key: str, *, fill: RGBColor) -> None:
     if task_key != "—":
         run.hyperlink.address = tracker_url(task_key)
         run.font.underline = MSO_UNDERLINE.SINGLE_LINE
+        run.font.color.rgb = THEME.key_rgb
 
     cell.fill.solid()
     cell.fill.fore_color.rgb = fill
