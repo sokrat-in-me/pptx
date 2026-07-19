@@ -55,6 +55,7 @@ from ai.rules.cherkizovo_theme import (  # noqa: E402
     TITLE_LEFT_IN,
     TITLE_SIZE,
     TITLE_TOP_IN,
+    TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
 )
 
@@ -309,6 +310,10 @@ def style_table_borders(table) -> None:
             set_cell_border(cell)
 
 
+def tracker_url(task_key: str) -> str:
+    return f"{TRACKER_BASE_URL}{task_key}"
+
+
 def set_run_font(
     run,
     *,
@@ -395,6 +400,7 @@ def set_cell(
     align=PP_ALIGN.LEFT,
     fill: RGBColor | None = None,
     font_color: RGBColor | None = None,
+    hyperlink: str | None = None,
 ) -> None:
     set_cell_runs(
         cell,
@@ -405,6 +411,8 @@ def set_cell(
     )
     for run in cell.text_frame.paragraphs[0].runs:
         run.font.name = font_name
+        if hyperlink:
+            run.hyperlink.address = hyperlink
 
 
 def add_logo(slide) -> None:
@@ -483,12 +491,14 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
                 align=PP_ALIGN.CENTER,
                 fill=fill,
             )
+            task_key = record["task_key"] or "—"
             set_cell(
                 table.cell(row_index, 1),
-                record["task_key"] or "—",
+                task_key,
                 size=THEME.body_size,
                 fill=fill,
                 font_color=THEME.key_rgb,
+                hyperlink=tracker_url(task_key) if task_key != "—" else None,
             )
 
             task_runs = [(text, bold, THEME.text_rgb) for text, bold in task_parts(record)]
