@@ -60,11 +60,11 @@ MONTH_LABELS = {
 }
 
 LABEL_COLUMNS = [
-    ("Контур", 0.75),
-    ("Блок", 0.45),
-    ("Задача / направление", 2.35),
+    ("Задача / направление", 3.55),
     ("Сист.", 0.4),
 ]
+
+EXCLUDED_TIMELINE = {("2026", "May"), ("2026", "Jun")}
 
 MAX_GANTT_SLIDES = 2
 TABLE_TOP_IN = 1.05
@@ -146,8 +146,11 @@ def load_schedule(path: Path) -> tuple[list[TimelineColumn], list[ScheduleRow]]:
     for index in range(8, len(months)):
         year = years[index].strip() if index < len(years) else ""
         month = months[index].strip() if index < len(months) else ""
-        if year or month:
-            timeline.append(TimelineColumn(index=index, year=year, month=month))
+        if not year and not month:
+            continue
+        if (year, month) in EXCLUDED_TIMELINE:
+            continue
+        timeline.append(TimelineColumn(index=index, year=year, month=month))
 
     records: list[ScheduleRow] = []
     for row in rows[3:]:
@@ -206,6 +209,14 @@ def build_year_spans(timeline: list[TimelineColumn]) -> list[YearSpan]:
         else:
             spans.append(YearSpan(year=column.year, columns=[column]))
     return spans
+
+
+def task_display_text(record: ScheduleRow) -> str:
+    if record.task:
+        if record.contour and not record.task.startswith(record.contour):
+            return f"{record.contour}: {record.task}"
+        return record.task
+    return record.contour
 
 
 def flatten_display_rows(records: list[ScheduleRow]) -> list[ScheduleRow]:
@@ -516,7 +527,7 @@ def build_gantt_slide(
             for column_index in range(label_col_count + timeline_col_count):
                 set_cell(
                     table.cell(row_index, column_index),
-                    record.task if column_index == 2 else "",
+                    record.task if column_index == 0 else "",
                     font_name=TITLE_FONT,
                     bold=True,
                     size=8,
@@ -526,18 +537,15 @@ def build_gantt_slide(
             continue
 
         fill = rgb("alt_row") if (row_index - 1) % 2 == 0 else rgb("white")
-        set_cell(table.cell(row_index, 0), record.contour, size=6, fill=fill, font_color=rgb("text"))
         set_cell(
-            table.cell(row_index, 1),
-            record.block,
+            table.cell(row_index, 0),
+            task_display_text(record),
             size=6,
             fill=fill,
-            align=PP_ALIGN.CENTER,
             font_color=rgb("text"),
         )
-        set_cell(table.cell(row_index, 2), record.task, size=6, fill=fill, font_color=rgb("text"))
         set_cell(
-            table.cell(row_index, 3),
+            table.cell(row_index, 1),
             record.system,
             size=6,
             fill=fill,
