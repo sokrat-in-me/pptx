@@ -1,1 +1,1 @@
-"""PowerPoint theme modules for Cherkizovo / MICHURIN presentations."""
+"""PowerPoint theme module for MICHURIN presentations."""
