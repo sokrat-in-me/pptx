@@ -360,51 +360,6 @@ def set_textbox(
     )
 
 
-def add_title_slide(prs: Presentation) -> None:
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    background = slide.background
-    fill = background.fill
-    fill.solid()
-    fill.fore_color.rgb = rgb("title_slide_bg")
-
-    title_box = slide.shapes.add_textbox(
-        Inches(TITLE_LEFT_IN),
-        Inches(2.4),
-        Inches(8.5),
-        Inches(1.2),
-    )
-    set_textbox(
-        title_box.text_frame,
-        "ГРАФИК ЗАПУСКА",
-        font_name=TITLE_FONT,
-        size=32,
-        bold=True,
-        color=rgb("title"),
-    )
-
-    subtitle_box = slide.shapes.add_textbox(
-        Inches(TITLE_LEFT_IN),
-        Inches(3.5),
-        Inches(9.0),
-        Inches(0.8),
-    )
-    set_textbox(
-        subtitle_box.text_frame,
-        "RTR — управленческий учёт\nMTD и продуктивный контур",
-        font_name=TITLE_FONT,
-        size=16,
-        color=rgb("subtitle"),
-    )
-
-    if LOGO_PATH.exists():
-        slide.shapes.add_picture(
-            str(LOGO_PATH),
-            Inches(LOGO_LEFT_IN),
-            Inches(LOGO_TOP_IN),
-            width=Inches(LOGO_WIDTH_IN),
-        )
-
-
 def estimate_row_height(record: ScheduleRow) -> float:
     if record.kind == "subsection":
         return 0.24
@@ -488,8 +443,8 @@ def build_gantt_slide(
             bold=True,
             size=7,
             align=PP_ALIGN.CENTER,
-            fill=rgb("header"),
-            font_color=rgb("header_text"),
+            fill=rgb("dark_burgundy"),
+            font_color=rgb("white"),
         )
         table.cell(0, column_index).merge(table.cell(1, column_index))
 
@@ -506,8 +461,8 @@ def build_gantt_slide(
             bold=True,
             size=7,
             align=PP_ALIGN.CENTER,
-            fill=rgb("year_header"),
-            font_color=rgb("header_text"),
+            fill=rgb("dark_burgundy"),
+            font_color=rgb("white"),
         )
         merge_header_cells(table, 0, start_col, end_col)
         for offset, column in enumerate(span.columns):
@@ -518,8 +473,8 @@ def build_gantt_slide(
                 bold=True,
                 size=6,
                 align=PP_ALIGN.CENTER,
-                fill=rgb("header"),
-                font_color=rgb("header_text"),
+                fill=rgb("dark_burgundy"),
+                font_color=rgb("white"),
             )
 
     for row_index, record in enumerate(group.rows, start=2):
@@ -589,8 +544,6 @@ def build_presentation(
     prs.slide_height = Inches(SLIDE_HEIGHT_IN)
     apply_michurin_theme(prs)
 
-    add_title_slide(prs)
-
     for page_index, group in enumerate(groups, start=1):
         build_gantt_slide(
             prs,
@@ -625,7 +578,7 @@ def main() -> None:
     slide_count = build_presentation(timeline, records, args.output)
     print(
         f"Created {args.output} with {len(records)} rows across "
-        f"{slide_count} gantt slides (+ title slide)"
+        f"{slide_count} gantt slides"
     )
 
 
