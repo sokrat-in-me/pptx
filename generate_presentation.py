@@ -53,8 +53,15 @@ TABLE_TOP_IN = 1.127
 TABLE_WIDTH_IN = 12.483
 HEADER_ROW_HEIGHT_IN = 0.808
 SIDE_MARGIN_IN = SLIDE_WIDTH_IN - TABLE_LEFT_IN - TABLE_WIDTH_IN
-TABLE_HEIGHT_IN = SLIDE_HEIGHT_IN - TABLE_TOP_IN - SIDE_MARGIN_IN
-DATA_ROW_HEIGHT_IN = (TABLE_HEIGHT_IN - HEADER_ROW_HEIGHT_IN) / ROWS_PER_SLIDE
+MIN_BOTTOM_MARGIN_IN = SIDE_MARGIN_IN
+MAX_TABLE_HEIGHT_IN = SLIDE_HEIGHT_IN - TABLE_TOP_IN - MIN_BOTTOM_MARGIN_IN
+MAX_DATA_HEIGHT_IN = MAX_TABLE_HEIGHT_IN - HEADER_ROW_HEIGHT_IN
+MIN_DATA_ROW_HEIGHT_IN = 0.742
+LINE_HEIGHT_IN = THEME.body_size / 72 * 1.15
+TASK_COL_WIDTH_IN = 4.051
+VALUE_COL_WIDTH_IN = 3.785
+STATUS_COL_WIDTH_IN = 1.872
+CHARS_PER_INCH = 11
 
 SLIDE_WIDTH = Inches(SLIDE_WIDTH_IN)
 SLIDE_HEIGHT = Inches(SLIDE_HEIGHT_IN)
@@ -68,7 +75,7 @@ TABLE_LEFT = Inches(TABLE_LEFT_IN)
 TABLE_TOP = Inches(TABLE_TOP_IN)
 TABLE_WIDTH = Inches(TABLE_WIDTH_IN)
 HEADER_ROW_HEIGHT = Inches(HEADER_ROW_HEIGHT_IN)
-DATA_ROW_HEIGHT = Inches(DATA_ROW_HEIGHT_IN)
+TABLE_HEIGHT = Inches(MAX_TABLE_HEIGHT_IN)
 CELL_MARGIN_LR = Pt(3)
 CELL_MARGIN_TB = Pt(2)
 
@@ -202,6 +209,62 @@ def cost_text(record: dict[str, str]) -> str:
     if cost in {"", "0", "#N/A"}:
         return ""
     return cost
+
+
+def wrapped_lines(text: str, column_width_in: float) -> int:
+    if not text:
+        return 1
+    chars_per_line = max(1, int(column_width_in * CHARS_PER_INCH))
+    return max(1, math.ceil(len(text) / chars_per_line))
+
+
+def estimate_row_height(record: dict[str, str]) -> float:
+    task = "".join(text for text, _ in task_parts(record))
+    value = value_text(record)
+    status = status_text(record)
+    if is_critical(record):
+        status = f"{status}\nКритичная!"
+
+    lines = max(
+        wrapped_lines(task, TASK_COL_WIDTH_IN),
+        wrapped_lines(value, VALUE_COL_WIDTH_IN),
+        wrapped_lines(status, STATUS_COL_WIDTH_IN),
+    )
+    return max(MIN_DATA_ROW_HEIGHT_IN, lines * LINE_HEIGHT_IN + 0.08)
+
+
+def distribute_row_heights(natural_heights: list[float]) -> list[float]:
+    if not natural_heights:
+        return []
+    natural_total = sum(natural_heights)
+    if natural_total >= MAX_DATA_HEIGHT_IN:
+        ratio = MAX_DATA_HEIGHT_IN / natural_total
+        return [height * ratio for height in natural_heights]
+
+    extra = MAX_DATA_HEIGHT_IN - natural_total
+    return [height + extra * (height / natural_total) for height in natural_heights]
+
+
+def pack_slides(records: list[dict[str, str]]) -> list[tuple[list[dict[str, str]], list[float]]]:
+    slides: list[tuple[list[dict[str, str]], list[float]]] = []
+    current_records: list[dict[str, str]] = []
+    current_heights: list[float] = []
+
+    for record in records:
+        row_height = estimate_row_height(record)
+        used_height = sum(current_heights)
+        if current_records and used_height + row_height > MAX_DATA_HEIGHT_IN:
+            slides.append((current_records, distribute_row_heights(current_heights)))
+            current_records = []
+            current_heights = []
+
+        current_records.append(record)
+        current_heights.append(row_height)
+
+    if current_records:
+        slides.append((current_records, distribute_row_heights(current_heights)))
+
+    return slides
 
 
 def set_cell_border(cell, *, color: str = "000000", width: str = "6350") -> None:
@@ -350,16 +413,16 @@ def add_slide_title(slide, page_index: int, total_pages: int) -> None:
 
 
 def build_presentation(records: list[dict[str, str]], output_path: Path) -> None:
-    total_pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
+    slides = pack_slides(records)
+    total_pages = max(1, len(slides))
+    row_offset = 0
 
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
     blank = prs.slide_layouts[6]
 
-    for page_index, chunk_start in enumerate(range(0, len(records), ROWS_PER_SLIDE), start=1):
-        chunk = records[chunk_start : chunk_start + ROWS_PER_SLIDE]
-        table_height = Inches(HEADER_ROW_HEIGHT_IN + DATA_ROW_HEIGHT_IN * len(chunk))
+    for page_index, (chunk, row_heights) in enumerate(slides, start=1):
         slide = prs.slides.add_slide(blank)
         add_logo(slide)
         add_slide_title(slide, page_index, total_pages)
@@ -370,15 +433,15 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             TABLE_LEFT,
             TABLE_TOP,
             TABLE_WIDTH,
-            table_height,
+            TABLE_HEIGHT,
         )
         table = table_shape.table
         for index, width in enumerate(COLUMN_WIDTHS):
             table.columns[index].width = width
 
         table.rows[0].height = HEADER_ROW_HEIGHT
-        for row_index in range(1, len(chunk) + 1):
-            table.rows[row_index].height = DATA_ROW_HEIGHT
+        for row_index, row_height in enumerate(row_heights, start=1):
+            table.rows[row_index].height = Inches(row_height)
 
         for column_index, title in enumerate(COLUMNS):
             set_cell(
@@ -393,7 +456,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             )
 
         for row_index, record in enumerate(chunk, start=1):
-            row_number = chunk_start + row_index
+            row_number = row_offset + row_index
             fill = THEME.alt_row_rgb if row_index % 2 == 0 else THEME.white_rgb
             critical = is_critical(record)
             accent = THEME.accent_rgb if critical else THEME.text_rgb
@@ -442,6 +505,7 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
             )
 
         style_table_borders(table)
+        row_offset += len(chunk)
 
     prs.save(output_path)
 
@@ -464,8 +528,8 @@ def main() -> None:
 
     records = load_csv(args.csv)
     build_presentation(records, args.output)
-    pages = max(1, math.ceil(len(records) / ROWS_PER_SLIDE))
-    print(f"Created {args.output} with {len(records)} tasks across {pages} slides")
+    slides = pack_slides(records)
+    print(f"Created {args.output} with {len(records)} tasks across {len(slides)} slides")
 
 
 if __name__ == "__main__":
