@@ -44,6 +44,8 @@ python generate_launch_schedule.py
 
 Полные рекомендации Черкизово / MICHURIN: [`ai/rules/cherkizovo-presentations.md`](ai/rules/cherkizovo-presentations.md)
 
+Правила коммита и push (обязательно после каждого изменения): [`ai/rules/git-workflow.md`](ai/rules/git-workflow.md)
+
 ## Стиль из PDF-шаблона
 
 | Элемент | Шрифт | Размер | Цвет |
