@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-STYLE_GUIDE_PATH = Path(__file__).with_name("cherkizovo-presentations.md")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+STYLE_GUIDE_PATH = _REPO_ROOT / "ai" / "rules" / "cherkizovo-presentations.md"
+
+THEME_NAME = "МИЧУРИН"
 
 # Slide format (section 5)
 SLIDE_WIDTH_IN = 13.333
@@ -35,6 +38,34 @@ COLORS = {
     "black": (0, 0, 0),
     "page_number": (154, 160, 166),     # #9AA0A6
     "green_accent": (25, 150, 70),      # #199646
+    "salmon": (240, 146, 159),          # #F0929F
+    "lime": (138, 238, 141),            # #8AEE8D
+}
+
+# Office theme color slots (section 3) — for ppt/theme/theme1.xml
+_OFFICE_SLOT_COLORS = {
+    "dk1": "black",
+    "lt1": "white",
+    "dk2": "dark_gray",
+    "lt2": "alt_row",
+    "accent1": "brand_red",
+    "accent2": "dark_red",
+    "accent3": "green_accent",
+    "accent4": "title",
+    "accent5": "salmon",
+    "accent6": "lime",
+    "hlink": "key",
+    "folHlink": "dark_gray",
+}
+
+
+def rgb_hex(name: str) -> str:
+    red, green, blue = COLORS[name]
+    return f"{red:02X}{green:02X}{blue:02X}"
+
+
+OFFICE_COLOR_SCHEME_HEX = {
+    slot: rgb_hex(color_name) for slot, color_name in _OFFICE_SLOT_COLORS.items()
 }
 
 # Layout, inches (section 5)

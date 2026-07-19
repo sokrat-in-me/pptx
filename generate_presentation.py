@@ -2,7 +2,7 @@
 """Generate pilot defects presentation from RTR CSV data.
 
 Style and layout: ai/rules/cherkizovo-presentations.md
-Theme constants: ai/rules/cherkizovo_theme.py
+Theme constants: themes/cherkizovo.py
 """
 
 from __future__ import annotations
@@ -17,16 +17,14 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, MSO_UNDERLINE, PP_ALIGN
-from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
-from lxml import etree
 
-RULES_DIR = Path(__file__).resolve().parent / "ai" / "rules"
-sys.path.insert(0, str(RULES_DIR.parent.parent))
+ROOT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT_DIR))
 
-from ai.rules.cherkizovo_theme import (  # noqa: E402
+from themes.cherkizovo import (  # noqa: E402
     CHARS_PER_INCH,
     COLORS,
     COLUMN_WIDTHS_IN,
@@ -60,6 +58,7 @@ from ai.rules.cherkizovo_theme import (  # noqa: E402
     TRACKER_BASE_URL,
     VALUE_COL_WIDTH_IN,
 )
+from themes.michurin import apply_michurin_theme  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo_0.png"
@@ -316,18 +315,6 @@ def tracker_url(task_key: str) -> str:
     return f"{TRACKER_BASE_URL}{task_key}"
 
 
-def set_presentation_hyperlink_colors(prs: Presentation, color: RGBColor) -> None:
-    """Set theme hyperlink colors so PowerPoint does not force default blue."""
-    hex_value = f"{color[0]:02X}{color[1]:02X}{color[2]:02X}"
-    theme_part = prs.slide_master.part.part_related_by(RT.THEME)
-    theme = etree.fromstring(theme_part.blob)
-    namespace = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
-    for tag in ("hlink", "folHlink"):
-        for element in theme.xpath(f"//a:clrScheme/a:{tag}/a:srgbClr", namespaces=namespace):
-            element.set("val", hex_value)
-    theme_part._blob = etree.tostring(theme)
-
-
 def set_run_font(
     run,
     *,
@@ -482,9 +469,9 @@ def build_presentation(records: list[dict[str, str]], output_path: Path) -> None
     row_offset = 0
 
     prs = Presentation()
-    set_presentation_hyperlink_colors(prs, THEME.key_rgb)
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
+    apply_michurin_theme(prs)
     blank = prs.slide_layouts[6]
 
     for page_index, (chunk, row_heights) in enumerate(slides, start=1):
