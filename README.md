@@ -13,6 +13,14 @@ pip install -r requirements.txt
 python generate_presentation.py
 ```
 
+### График запуска RTR
+
+```bash
+python generate_launch_schedule.py
+```
+
+Результат: `График_запуска_RTR.pptx` — диаграмма Ганта по данным `data/RTR-launch-schedule.csv` (2 слайда с таблицей, периоды сгруппированы по годам и месяцам).
+
 ## Структура слайдов
 
 Каждый слайд повторяет шаблон PDF:
@@ -35,6 +43,8 @@ python generate_presentation.py
 ## Стиль и правила оформления
 
 Полные рекомендации Черкизово / MICHURIN: [`ai/rules/cherkizovo-presentations.md`](ai/rules/cherkizovo-presentations.md)
+
+Правила коммита и push (обязательно после каждого изменения): [`ai/rules/git-workflow.md`](ai/rules/git-workflow.md)
 
 ## Стиль из PDF-шаблона
 
